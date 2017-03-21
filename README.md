@@ -2,7 +2,7 @@
 ![frep-code-shell](https://img.shields.io/badge/code-shell-yellow.svg)
 [![frep-license](http://img.shields.io/badge/license-MIT+-blue.svg)](https://github.com/JayBrown/frep/blob/master/license.md)
 
-# frep: File Report <img src="https://github.com/JayBrown/frep/blob/master/img/jb-img.png" height="20px"/>
+# frep: macOS File Report <img src="https://github.com/JayBrown/frep/blob/master/img/jb-img.png" height="20px"/>
 **Shell script that outputs lots of Unix, FS, macOS, Finder, and Spotlight information on any file type**
 
 ## Current status
