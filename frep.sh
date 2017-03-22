@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# frep v0.9.0 beta
+# frep v0.9.1 beta
 # macOS File Reporter
 
 LANG=en_US.UTF-8
@@ -95,32 +95,8 @@ BLOCKSNO=$(echo "$STATS" | /usr/bin/awk '{print $14}' | /usr/bin/awk -F= '{print
 FILEGENNO=$(/usr/bin/stat -f '%v')
 
 # file flags
-THIDDEN="FALSE" ; TOPAQUE="FALSE" ; TARCH="FALSE" ; TNODUMP="FALSE" ; TSAPPND="FALSE" ; TSCHG="FALSE" ; TUAPPND="FALSE" ; TUCHG="FALSE" ; TRESTR="FALSE" ; TCOMPR="FALSE" ; TUUNLNK="FALSE" ; TSUNLNK="FALSE" # macOS
-TOFFLINE="FALSE" ; TSPARSE="FALSE" ; TSNAP="FALSE" # BSD etc.
-TRDONLY="FALSE" ; TSYSTEM="FALSE" ; TREPARSE="FALSE" # Windows/CIFS
 CHFLAGS=$(echo "$LISTING" | /usr/bin/awk '{print $5}' | /usr/bin/awk '{gsub(","," ");print}')
-# macOS
-[[ $(echo "$CHFLAGS" | /usr/bin/grep "restricted") != "" ]] && TRESTR="TRUE"
-[[ $(echo "$CHFLAGS" | /usr/bin/grep "arch") != "" ]] && TARCH="TRUE"
-[[ $(echo "$CHFLAGS" | /usr/bin/grep "opaque") != "" ]] && TOPAQUE="TRUE"
-[[ $(echo "$CHFLAGS" | /usr/bin/grep "nodump") != "" ]] && TNODUMP="TRUE"
-[[ $(echo "$CHFLAGS" | /usr/bin/grep "sappnd") != "" ]] && TSAPPND="TRUE"
-[[ $(echo "$CHFLAGS" | /usr/bin/grep "schg") != "" ]] && TSCHG="TRUE"
-[[ $(echo "$CHFLAGS" | /usr/bin/grep "uappnd") != "" ]] && TUAPPND="TRUE"
-[[ $(echo "$CHFLAGS" | /usr/bin/grep "uchg") != "" ]] && TUCHG="TRUE"
-[[ $(echo "$CHFLAGS" | /usr/bin/grep "hidden") != "" ]] && THIDDEN="TRUE"
-[[ $(echo "$CHFLAGS" | /usr/bin/grep "compressed") != "" ]] && TCOMPR="TRUE"
-[[ $(echo "$CHFLAGS" | /usr/bin/grep "uunl") != "" ]] && TUUNLNK="TRUE"
-[[ $(echo "$CHFLAGS" | /usr/bin/grep "sunl") != "" ]] && TSUNLNK="TRUE"
-# BSD (macOS recognized)
-[[ $(echo "$CHFLAGS" | /usr/bin/grep "snapshot") != "" ]] && TSNAP="TRUE"
-# Windows/CIFS
-[[ $(echo "$CHFLAGS" | /usr/bin/grep "only") != "" ]] && TRDONLY="TRUE"
-[[ $(echo "$CHFLAGS" | /usr/bin/grep "system") != "" ]] && TSYSTEM="TRUE"
-[[ $(echo "$CHFLAGS" | /usr/bin/grep "reparse") != "" ]] && TREPARSE="TRUE"
-# BSD etc.
-[[ $(echo "$CHFLAGS" | /usr/bin/grep "offline") != "" ]] && TOFFLINE="TRUE"
-[[ $(echo "$CHFLAGS" | /usr/bin/grep "sparse") != "" ]] && TSPARSE="TRUE"
+ROOTFLAGS=$(echo "$CHFLAGS" | /usr/bin/awk '{for(w=1;w<=NF;w++) print $w}' | /usr/bin/sort | /usr/bin/uniq -c | /usr/bin/sort -nr | /usr/bin/awk '{gsub("-","none");print $2}' | xargs)
 
 # sticky bit
 STICKY="FALSE"
@@ -232,27 +208,7 @@ echo -e "OpenMeta Tags:\t$TAGS"
 echo -e "Finder Comment:\t$FCOMMENT"
 echo -e "Invisible:\t$TINV"
 echo -e "Hidden Extension:\t$HIDDENEXT"
-echo -e "Hidden:\t$THIDDEN"
-echo -e "Opaque:\t$TOPAQUE"
-echo -e "Restricted:\t$TRESTR"
-echo -e "Compressed:\t$TCOMPR"
-echo -e "Immutable (User):\t$TUCHG"
-echo -e "Immutable (System):\t$TSCHG"
-echo -e "Append (User):\t$TUAPPND"
-echo -e "Append (System):\t$TSAPPND"
-echo -e "No Unlink (User):\t$TUUNLNK"
-echo -e "No Unlink (System): \t$TSUNLNK"
-echo -e "No Dump:\t$TNODUMP"
-echo -e "Archived:\t$TARCH"
-
-echo -e "Snapshot:\t$TSNAP"
-
-echo -e "Offline:\t$TOFFLINE"
-echo -e "Sparse:\t$TSPARSE"
-
-echo -e "Read-Only (Windows):\t$TRDONLY"
-echo -e "Reparse (Windows):\t$TREPARSE"
-echo -e "System (Windows):\t$TSYSTEM"
+echo -e "Flags:\t$ROOTFLAGS"
 
 # actual disk usage size
 DISK_USAGE=$(/usr/bin/du -k -d 0 "$FILEPATH" | /usr/bin/head -n 1 | /usr/bin/awk '{print $1}')
@@ -638,7 +594,6 @@ echo -e "Download Date:\t$DL_DATE"
 if [[ "$FTYPEX" == "Directory" ]] ; then
 	FULL_LIST=$(ls -RalO "$FILEPATH" | /usr/bin/sed -e '/ .$/d' -e '/ ..$/d' -e '/^$/d' -e '/^total /d' -e '/^.\//d' -e '/^'"$SEDPATH"'/d')
 	if [[ "$FULL_LIST" != "" ]] ; then
-		### XYZ all with FULL_LIST !!!
 		INV_CONTAIN=$(find "$FILEPATH" \( -iname ".*" \) | /usr/bin/wc -l | xargs) # invisible items
 		[[ "$INV_CONTAIN" == "" ]] && INV_CONTAIN="0"
 		DSSTORE_CONTAIN=$(find "$FILEPATH" \( -iname ".DS_Store" \) | /usr/bin/wc -l | xargs) # .DS_Store
@@ -647,81 +602,25 @@ if [[ "$FTYPEX" == "Directory" ]] ; then
 		[[ "$LOCAL_CONTAIN" == "" ]] && LOCAL_CONTAIN="0"
 		OTHER_INV=$(echo "$INV_CONTAIN - $DSSTORE_CONTAIN - $LOCAL_CONTAIN" | /usr/bin/bc -l) # other invisible items calculation
 		[[ "$OTHER_INV" == "" ]] && OTHER_INV="0"
-		ITEM_COUNT=$(echo "$FULL_LIST" | /usr/bin/wc -l | xargs) # total item count
-		FILE_CONTAIN=$(echo "$FULL_LIST" | /usr/bin/grep "^-" | /usr/bin/wc -l | xargs) # total file count
-		DIR_CONTAIN=$(echo "$FULL_LIST" | /usr/bin/grep "^d" | /usr/bin/wc -l | xargs) # total directory count
-		SYM_CONTAIN=$(echo "$FULL_LIST" | /usr/bin/grep "^l" | /usr/bin/wc -l | xargs) # total symlink count
-		PIPE_CONTAIN=$(echo "$FULL_LIST" | /usr/bin/grep "^p" | /usr/bin/wc -l | xargs) # total pipe count
-		DEV_CONTAIN=$(echo "$FULL_LIST" | /usr/bin/grep "^c" | /usr/bin/wc -l | xargs) # total character device file count
-		SOCKET_CONTAIN=$(echo "$FULL_LIST" | /usr/bin/grep "^s" | /usr/bin/wc -l | xargs) # total socket file count
-		BLOCK_CONTAIN=$(echo "$FULL_LIST" | /usr/bin/grep "^b" | /usr/bin/wc -l | xargs) # total block file count
-		WO_CONTAIN=$(echo "$FULL_LIST" | /usr/bin/grep "^w" | /usr/bin/wc -l | xargs) # total whiteout count
-		HIDDEN="0" ; OPAQUE="0" ; ARCH="0" ; NODUMP="0" ; SAPPND="0" ; SCHG="0" ; UAPPND="0" ; UCHG="0" ; RESTR="0" ; COMPR="0" ; UUNLNK="0" ; SUNLNK="0"  # macOS
-		OFFLINE="0" ; SPARSE="0" ; SNAP="0" # BSD etc.
-		RDONLY="0" ; SYSTEM="0" ; REPARSE="0" # Windows/CIFS
-		while read -r CHFLAG
-		do
-			# macOS
-			[[ $(echo "$CHFLAG" | /usr/bin/grep "restricted") != "" ]] && ((RESTR++))
-			[[ $(echo "$CHFLAG" | /usr/bin/grep "arch") != "" ]] && ((ARCH++))
-			[[ $(echo "$CHFLAG" | /usr/bin/grep "opaque") != "" ]] && ((OPAQUE++))
-			[[ $(echo "$CHFLAG" | /usr/bin/grep "nodump") != "" ]] && ((NODUMP++))
-			[[ $(echo "$CHFLAG" | /usr/bin/grep "sappnd") != "" ]] && ((SAPPND++))
-			[[ $(echo "$CHFLAG" | /usr/bin/grep "schg") != "" ]] && ((SCHG++))
-			[[ $(echo "$CHFLAG" | /usr/bin/grep "uappnd") != "" ]] && ((UAPPND++))
-			[[ $(echo "$CHFLAG" | /usr/bin/grep "uchg") != "" ]] && ((UCHG++))
-			[[ $(echo "$CHFLAG" | /usr/bin/grep "hidden") != "" ]] && ((HIDDEN++))
-			[[ $(echo "$CHFLAG" | /usr/bin/grep "compressed") != "" ]] && ((COMPR++))
-			[[ $(echo "$CHFLAG" | /usr/bin/grep "uunl") != "" ]] && ((UUNLNK++))
-			[[ $(echo "$CHFLAG" | /usr/bin/grep "sunl") != "" ]] && ((SUNLNK++))
-			# BSD (macOS recognized)
-			[[ $(echo "$CHFLAG" | /usr/bin/grep "snapshot") != "" ]] && ((SNAP++))
-			# Windows/CIFS
-			[[ $(echo "$CHFLAG" | /usr/bin/grep "only") != "" ]] && ((RDONLY++))
-			[[ $(echo "$CHFLAG" | /usr/bin/grep "system") != "" ]] && ((SYSTEM++))
-			[[ $(echo "$CHFLAG" | /usr/bin/grep "reparse") != "" ]] && ((REPARSE++))
-			# BSD etc.
-			[[ $(echo "$CHFLAG" | /usr/bin/grep "offline") != "" ]] && ((OFFLINE++))
-			[[ $(echo "$CHFLAG" | /usr/bin/grep "sparse") != "" ]] && ((SPARSE++))
-		done < <(echo "$FULL_LIST" | /usr/bin/awk '{print $5}')
 
+		CHFLAGS_ALL=$(echo "$FULL_LIST" | /usr/bin/awk '{print $5}')
+		FLAGS_COUNT=$(echo "$CHFLAGS_ALL" | /usr/bin/grep -v "-" | /usr/bin/awk '{gsub(","," ");print}'| /usr/bin/awk '{for(w=1;w<=NF;w++) print $w}' | /usr/bin/sort | /usr/bin/uniq -c | /usr/bin/sort -nr | /usr/bin/awk '{print $2 ":\t" $1}')
+
+		FTYPES_ALL=$(echo "$FULL_LIST" | /usr/bin/awk '{print $1}' | /usr/bin/cut -c 1)
+		FTYPES_COUNT=$(echo "$FTYPES_ALL" | /usr/bin/awk '{for(w=1;w<=NF;w++) print $w}' | /usr/bin/sort | /usr/bin/uniq -c | /usr/bin/sort -nr | /usr/bin/awk '{print $2 ":\t" $1}' \
+		| /usr/bin/sed -e '/^-:/s/-:/Files:/g' -e '/^d:/s/d:/Directories:/g' -e '/^l:/s/l:/Symbolic Links:/g' -e '/^p:/s/p:/Pipes\/FIFO:/g' -e '/^c:/s/c:/Character Devices:/g' -e '/^s:/s/s:/Sockets:/g' -e '/^b:/s/b:/Blocks:/g' -e '/^w:/s/w:/Whiteouts:/g')
 		# HFS+ cloaked files >>> HOW?
 		# HFS+ special file system files (locations, private data) >>> HOW?
 
+		ITEM_COUNT=$(echo "$FULL_LIST" | /usr/bin/wc -l | xargs) # total item count
+
 		echo -e "Contains:\t$ITEM_COUNT objects"
-		echo -e "Directories:\t$DIR_CONTAIN"
-		echo -e "Files:\t$FILE_CONTAIN"
-		echo -e "Symbolic Links:\t$SYM_CONTAIN"
-		echo -e "Pipes/FIFO:\t$PIPE_CONTAIN"
-		echo -e "Sockets:\t$SOCKET_CONTAIN"
-		echo -e "Character Devices:\t$DEV_CONTAIN"
-		echo -e "Blocks:\t$BLOCK_CONTAIN"
-		echo -e "Whiteouts:\t$WO_CONTAIN"
 		echo -e "Invisible:\t$INV_CONTAIN"
 		echo -e ".DS_Store:\t$DSSTORE_CONTAIN"
 		echo -e ".localized:\t$LOCAL_CONTAIN"
 		echo -e "Invisible (other):\t$OTHER_INV"
-		echo -e "Hidden:\t$HIDDEN"
-		echo -e "Opaque:\t$OPAQUE"
-		echo -e "Restricted:\t$RESTR"
-		echo -e "Compressed:\t$COMPR"
-		echo -e "Immutable (User):\t$UCHG"
-		echo -e "Immutable (System):\t$SCHG"
-		echo -e "Append (User):\t$UAPPND"
-		echo -e "Append (System):\t$SAPPND"
-		echo -e "No Unlink (User):\t$UUNLNK"
-		echo -e "No Unlink (System): \t$SUNLNK"
-		echo -e "No Dump:\t$NODUMP"
-		echo -e "Archived:\t$ARCH"
-
-		echo -e "Snapshot:\t$SNAP"
-
-		echo -e "Offline:\t$OFFLINE"
-		echo -e "Sparse:\t$SPARSE"
-
-		echo -e "Read-Only (Windows):\t$RDONLY"
-		echo -e "Reparse (Windows):\t$REPARSE"
-		echo -e "System (Windows):\t$SYSTEM"
+		echo -e "$FTYPES_COUNT"
+		echo -e "$FLAGS_COUNT"
 	else
 		echo -e "Contains:\t0 objects"
 	fi
