@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# frep v0.9.1 beta
+# frep v0.9.2 beta
 # macOS File Reporter
 
 LANG=en_US.UTF-8
@@ -42,74 +42,53 @@ mebibyte () {
 for FILEPATH in "$@"
 do
 
+tabs 30
+
+echo "*** BEGIN FILE REPORT ***"
+SEDPATH=$(echo "$FILEPATH" | /usr/bin/awk '{gsub("/","\\/");print}')
+
 # stat first
 STAT=$(/usr/bin/stat "$FILEPATH")
+STATS=$(/usr/bin/stat -s "$FILEPATH")
 
 # file & volume info
 BASENAME=$(/usr/bin/basename "$FILEPATH")
-if [[ "$BASENAME" == "."* ]] ; then
-	TINV="TRUE"
-else
-	TINV="FALSE"
-fi
+echo -e "Basename:\t$BASENAME"
+
 DIRNAME=$(/usr/bin/dirname "$FILEPATH")
-SEDPATH=$(echo "$FILEPATH" | /usr/bin/awk '{gsub("/","\\/");print}')
+echo -e "Path:\t$DIRNAME"
+
 FPDF=$(/bin/df "$FILEPATH" | tail -1)
-MPOINT=$(echo "$FPDF" | /usr/bin/awk '{print $9}')
 FSYSTEM=$(echo "$FPDF" | /usr/bin/awk '{print $1}')
+echo -e "Filesystem:\t$FSYSTEM"
+
+MPOINT=$(echo "$FPDF" | /usr/bin/awk '{print $9}')
+echo -e "Mount Point:\t$MPOINT"
+
 VOL_NAME=$(/usr/sbin/diskutil info "$FSYSTEM" | /usr/bin/awk -F":" '/Volume Name/{print $2}' | xargs)
 [[ "$VOL_NAME" == "" ]] && VOL_NAME="n/a"
+echo -e "Volume Name:\t$VOL_NAME"
 
 # check if Spotlight is enabled
-MDUTIL=$(/usr/bin/mdutil -s "$MPOINT" | tail -n 1 | xargs)
-if [[ "$SL_STATUS" == "Indexing enabled." ]] ; then
-	SL_STATUS="true"
+MDUTIL=$(/usr/bin/mdutil -s "$MPOINT" 2>&1 | tail -n 1)
+if [[ $(echo "$MDUTIL" | /usr/bin/grep "Indexing enabled.") != "" ]] ; then
+	SL_STATUS="enabled"
 else
-	SL_STATUS="false"
+	SL_STATUS="disabled"
 fi
+echo -e "Spotlight:\t$SL_STATUS"
 
-# read all kinds of other file/dir info into variables for later parsing
-ENTITLEMENTS=$(/usr/bin/codesign -d --entitlements - "$FILEPATH" 2>&1)
-STATS=$(/usr/bin/stat -s "$FILEPATH")
-MDLS=$(/usr/bin/mdls "$FILEPATH" 2>/dev/null)
-ASSESS=$(/usr/sbin/spctl -v --assess "$FILEPATH" 2>&1)
-LISTING=$(ls -alO "$FILEPATH" | /usr/bin/head -2 | /usr/bin/tail -1)
-
-# parse the stat information
-INODE_DEV=$(echo "$STAT" | /usr/bin/awk '{print $1}')
-INODE=$(echo "$STAT" | /usr/bin/awk '{print $2}')
-HARDLINKS=$(echo "$STAT" | /usr/bin/awk '{print $4}')
-RDEV=$(echo "$STAT" | /usr/bin/awk '{print $7}') # special file inode device type
-PERMISSIONS=$(echo "$STAT" | /usr/bin/awk '{print $3}')
-MODEA=$(/usr/bin/stat -f '%A' "$FILEPATH")
-MODEB=$(echo "$STATS" | /usr/bin/awk '{print $3}' | /usr/bin/awk -F= '{print $2}')
-MODE="$MODEB ($MODEA)"
-UIDN=$(echo "$STAT" | /usr/bin/awk '{print $5}')
-UIDNO=$(echo "$STATS" | /usr/bin/awk '{print $5}' | /usr/bin/awk -F= '{print $2}')
-GIDN=$(echo "$STAT" | /usr/bin/awk '{print $6}')
-GIDNO=$(echo "$STATS" | /usr/bin/awk '{print $6}' | /usr/bin/awk -F= '{print $2}')
-FLAGSA=$(echo "$STATS" | /usr/bin/awk '{print $15}' | /usr/bin/awk -F= '{print $2}')
-FLAGSB=$(echo "$STAT" | /usr/bin/awk -F"\"" '{print $9}' | /usr/bin/awk '{print $3}')
-USERFLAGS="$FLAGSB ($FLAGSA)"
-BLOCKSNO=$(echo "$STATS" | /usr/bin/awk '{print $14}' | /usr/bin/awk -F= '{print $2}')
-FILEGENNO=$(/usr/bin/stat -f '%v')
-
-# file flags
-CHFLAGS=$(echo "$LISTING" | /usr/bin/awk '{print $5}' | /usr/bin/awk '{gsub(","," ");print}')
-ROOTFLAGS=$(echo "$CHFLAGS" | /usr/bin/awk '{for(w=1;w<=NF;w++) print $w}' | /usr/bin/sort | /usr/bin/uniq -c | /usr/bin/sort -nr | /usr/bin/awk '{gsub("-","none");print $2}' | xargs)
-
-# sticky bit
-STICKY="FALSE"
-[[ $(echo "$LISTING" | /usr/bin/awk '{print $1}') == *"t" ]] && STICKY="TRUE"
-
-# SUID/GUID
-SUIDSET="not set" ; GUIDSET="not set"
-[[ $(echo "$LISTING" | /usr/bin/awk '{print $1}') == ???"s"* ]] && SUIDSET="enabled (ux)"
-[[ $(echo "$LISTING" | /usr/bin/awk '{print $1}') == ???"S"* ]] && SUIDSET="enabled"
-[[ $(echo "$LISTING" | /usr/bin/awk '{print $1}') == ??????"s"* ]] && GUIDSET="enabled (gx)"
-[[ $(echo "$LISTING" | /usr/bin/awk '{print $1}') == ??????"S"* ]] && GUIDSET="enabled"
+# Shared folder
+SHARE_INFO=$(/usr/bin/dscl . -read SharePoints/"$BASENAME" 2>&1)
+if [[ $(echo "$SHARE_INFO" | /usr/bin/grep "$FILEPATH") != "" ]] ; then
+	SHARED="TRUE"
+else
+	SHARED="FALSE"
+fi
+echo -e "Shared:\t$SHARED"
 
 # file type (Unix)
+LISTING=$(ls -alO "$FILEPATH" | /usr/bin/head -2 | /usr/bin/tail -1)
 [[ $(echo "$LISTING" | /usr/bin/grep "^-") != "" ]] && FTYPEX="File"
 [[ $(echo "$LISTING" | /usr/bin/grep "^d") != "" ]] && FTYPEX="Directory"
 [[ $(echo "$LISTING" | /usr/bin/grep "^l") != "" ]] && FTYPEX="Symbolic Link"
@@ -118,13 +97,31 @@ SUIDSET="not set" ; GUIDSET="not set"
 [[ $(echo "$LISTING" | /usr/bin/grep "^s") != "" ]] && FTYPEX="Socket"
 [[ $(echo "$LISTING" | /usr/bin/grep "^b") != "" ]] && FTYPEX="Block"
 [[ $(echo "$LISTING" | /usr/bin/grep "^w") != "" ]] && FTYPEX="Whiteout"
+echo -e "File Type:\t$FTYPEX"
 
 # symlink target
 if [[ "$FTYPEX" == "Symbolic Link" ]] ; then
 	SLTARGET="-> $(/usr/bin/stat -f '%Y' "$FILEPATH")"
-else
-	SLTARGET="n/a"
+	echo -e "Reference:\t$SLTARGET"
 fi
+
+# sticky bit
+STICKY="FALSE"
+[[ $(echo "$LISTING" | /usr/bin/awk '{print $1}') == *"t" ]] && STICKY="TRUE"
+echo -e "Sticky Bit:\t$STICKY"
+
+# SUID/GUID
+SUIDSET="not set" ; GUIDSET="not set"
+[[ $(echo "$LISTING" | /usr/bin/awk '{print $1}') == ???"s"* ]] && SUIDSET="enabled (ux)"
+[[ $(echo "$LISTING" | /usr/bin/awk '{print $1}') == ???"S"* ]] && SUIDSET="enabled"
+[[ $(echo "$LISTING" | /usr/bin/awk '{print $1}') == ??????"s"* ]] && GUIDSET="enabled (gx)"
+[[ $(echo "$LISTING" | /usr/bin/awk '{print $1}') == ??????"S"* ]] && GUIDSET="enabled"
+echo -e "GUID:\t$GUIDSET"
+echo -e "SUID:\t$SUIDSET"
+
+# file type (specific)
+FILETYPE=$(/usr/bin/file "$FILEPATH" | /usr/bin/awk -F": " '{print $2}')
+echo -e "File Content:\t$FILETYPE"
 
 # check if bundle/directory
 if [[ "$FTYPEX" == "Directory" ]] ; then
@@ -138,76 +135,75 @@ if [[ "$FTYPEX" == "Directory" ]] ; then
 else
 	BUNDLE_INFO="FALSE"
 fi
+echo -e "Bundle:\t$BUNDLE_INFO"
 
-# file type (specific) & kind (macOS)
-FILETYPE=$(/usr/bin/file "$FILEPATH" | /usr/bin/awk -F": " '{print $2}')
+### method to read the default "open with" application for a file?
+
+# MDLS
+MDLS=$(/usr/bin/mdls "$FILEPATH" 2>/dev/null)
+
+# content type
 CONTENT_TYPE=$(echo "$MDLS" | /usr/bin/awk -F"= " '/kMDItemContentType/{print $2}' | /usr/bin/head -n 1 | /usr/bin/sed 's/^"\(.*\)"$/\1/')
 if [[ "$CONTENT_TYPE" == "" ]] || [[ "$CONTENT_TYPE" == "(null)" ]] ; then
 	CONTENT_TYPE="n/a"
 fi
+echo -e "Uniform Type Identifier:\t$CONTENT_TYPE"
+
+# kind
 KIND=$(echo "$MDLS" | /usr/bin/awk -F"= " '/kMDItemKind/{print $2}' | /usr/bin/sed 's/^"\(.*\)"$/\1/')
 if [[ "$KIND" == "" ]] || [[ "$KIND" == "(null)" ]] ; then
 	KIND="n/a"
 fi
+echo -e "Kind:\t$KIND"
 
-# Finder tags & commend & type/creator & hidden extension
-TAGS=$(/usr/bin/mdls -raw -name kMDItemUserTags "$FILEPATH" | /usr/bin/sed -e '1,1d' -e '$d' | xargs)
-if [[ "$TAGS" == "(null)" ]] || [[ "$TAGS" == "" ]] ; then
-	TAGS="not tagged"
-fi
-FCOMMENT=$(/usr/bin/mdls -raw -name kMDItemFinderComment "$FILEPATH" 2>&1)
-if [[ "$FCOMMENT" == "(null)" ]] || [[ "$FCOMMENT" == "" ]] ; then
-	FCOMMENT="n/a"
-fi
-CREATORCODE=$(echo "$MDLS" | /usr/bin/awk -F"= " '/kMDItemFSCreatorCode/{print $2}' | /usr/bin/sed 's/^"\(.*\)"$/\1/')
-if [[ "$CREATORCODE" == "(null)" ]] || [[ "$CREATORCODE" == "" ]] ; then
-	CREATORCODE="n/a"
-fi
+# Finder: type
 TYPECODE=$(echo "$MDLS" | /usr/bin/awk -F"= " '/kMDItemFSTypeCode/{print $2}' | /usr/bin/sed 's/^"\(.*\)"$/\1/')
 if [[ "$TYPECODE" == "(null)" ]] || [[ "$TYPECODE" == "" ]] ; then
 	TYPECODE="n/a"
 fi
+echo -e "Type:\t$TYPECODE"
+
+# Finder: creator
+CREATORCODE=$(echo "$MDLS" | /usr/bin/awk -F"= " '/kMDItemFSCreatorCode/{print $2}' | /usr/bin/sed 's/^"\(.*\)"$/\1/')
+if [[ "$CREATORCODE" == "(null)" ]] || [[ "$CREATORCODE" == "" ]] ; then
+	CREATORCODE="n/a"
+fi
+echo -e "Creator\t$CREATORCODE"
+
+# OpenMeta
+TAGS=$(/usr/bin/mdls -raw -name kMDItemUserTags "$FILEPATH" | /usr/bin/sed -e '1,1d' -e '$d' | xargs)
+if [[ "$TAGS" == "(null)" ]] || [[ "$TAGS" == "" ]] ; then
+	TAGS="n/a"
+fi
+echo -e "OpenMeta Tags:\t$TAGS"
+
+# Finder comment
+FCOMMENT=$(/usr/bin/mdls -raw -name kMDItemFinderComment "$FILEPATH" 2>&1)
+if [[ "$FCOMMENT" == "(null)" ]] || [[ "$FCOMMENT" == "" ]] ; then
+	FCOMMENT="n/a"
+fi
+echo -e "Finder Comment:\t$FCOMMENT"
+
+# extension hidden in Finder?
 HIDDENEXT=$(echo "$MDLS" | /usr/bin/awk -F"= " '/kMDItemFSIsExtensionHidden/{print $2}')
 if [[ "$HIDDENEXT" == "1" ]] ; then
 	HIDDENEXT="TRUE"
 else
 	HIDDENEXT="FALSE"
 fi
-
-# Shared folder
-SHARE_INFO=$(/usr/bin/dscl . -read SharePoints/"$BASENAME" 2>&1)
-if [[ $(echo "$SHARE_INFO" | /usr/bin/grep "$FILEPATH") != "" ]] ; then
-	SHARED="TRUE"
-else
-	SHARED="FALSE"
-fi
-
-tabs 30
-
-echo "*** BEGIN FILE REPORT ***"
-
-echo -e "Basename:\t$BASENAME"
-echo -e "Path:\t$DIRNAME"
-echo -e "Filesystem:\t$FSYSTEM"
-echo -e "Mount Point:\t$MPOINT"
-echo -e "Volume Name:\t$VOL_NAME"
-echo -e "Shared:\t$SHARED"
-
-echo -e "File Type:\t$FTYPEX"
-echo -e "Reference:\t$SLTARGET"
-echo -e "Sticky Bit:\t$STICKY"
-echo -e "GUID:\t$GUIDSET"
-echo -e "SUID:\t$SUIDSET"
-echo -e "File Content:\t$FILETYPE"
-echo -e "Bundle:\t$BUNDLE_INFO"
-echo -e "Uniform Type Identifier:\t$CONTENT_TYPE"
-echo -e "Kind:\t$KIND"
-echo -e "Type:\t$TYPECODE"
-echo -e "Creator\t$CREATORCODE"
-echo -e "OpenMeta Tags:\t$TAGS"
-echo -e "Finder Comment:\t$FCOMMENT"
-echo -e "Invisible:\t$TINV"
 echo -e "Hidden Extension:\t$HIDDENEXT"
+
+# Invisible (true dot file, not macOS "hidden" flag)
+if [[ "$BASENAME" == "."* ]] ; then
+	TINV="TRUE"
+else
+	TINV="FALSE"
+fi
+echo -e "Invisible:\t$TINV"
+
+# Unix file flags
+CHFLAGS=$(echo "$LISTING" | /usr/bin/awk '{print $5}' | /usr/bin/awk '{gsub(","," ");print}')
+ROOTFLAGS=$(echo "$CHFLAGS" | /usr/bin/awk '{for(w=1;w<=NF;w++) print $w}' | /usr/bin/sort | /usr/bin/uniq -c | /usr/bin/sort -nr | /usr/bin/awk '{gsub("-","none");print $2}' | xargs)
 echo -e "Flags:\t$ROOTFLAGS"
 
 # actual disk usage size
@@ -216,6 +212,7 @@ DU_SIZE=$(echo "$DISK_USAGE * 1024" | /usr/bin/bc -l)
 DU_SIZE_MB=$(megabyte "$DU_SIZE")
 DU_SIZE_MIB=$(mebibyte "$DU_SIZE")
 DU_SIZE_INFO="$DU_SIZE B ($DU_SIZE_MB, $DU_SIZE_MIB)"
+echo -e "Physical Size (du):\t$DU_SIZE_INFO"
 
 # physical size as reported by macOS (mdls) -- might be larger than actual disk usage (virtual size ignoring HFS+ compression)
 PHYSICAL_SIZE=$(echo "$MDLS" | /usr/bin/awk -F"= " '/kMDItemPhysicalSize/{print $2}')
@@ -228,31 +225,7 @@ else
 	PHYSICAL_SIZE_MIB=$(mebibyte "$PHYSICAL_SIZE")
 	PHYSICAL_SIZE_INFO="$PHYSICAL_SIZE B ($PHYSICAL_SIZE_MB, $PHYSICAL_SIZE_MIB)"
 fi
-
-# data size (total byte count)
-DATA_SIZE=$(ls -Ral "$FILEPATH" | /usr/bin/grep -v '^d' | /usr/bin/awk '{total += $5} END {print total}')
-DATA_SIZE_MB=$(megabyte "$DATA_SIZE")
-DATA_SIZE_MIB=$(mebibyte "$DATA_SIZE")
-DATA_SIZE_INFO="$DATA_SIZE B ($DATA_SIZE_MB, $DATA_SIZE_MIB)"
-
-# Xattr & Resource fork size
-EXTRA_LIST=$(ls -Ral@ "$FILEPATH" | /usr/bin/awk 'NF<=2' | /usr/bin/sed -e '/^$/d' -e '/^total /d' -e '/^'"$SEDPATH"'/d')
-RES_SIZE=$(echo "$EXTRA_LIST" | /usr/bin/grep "com.apple.ResourceFork" | /usr/bin/awk '{total += $2} END {print total}')
-[[ "$RES_SIZE" == "" ]] && RES_SIZE="0"
-RES_SIZE_MB=$(megabyte "$RES_SIZE")
-RES_SIZE_MIB=$(mebibyte "$RES_SIZE")
-RES_SIZE_INFO="$RES_SIZE B ($RES_SIZE_MB, $RES_SIZE_MIB)"
-XATTR_SIZE=$(echo "$EXTRA_LIST" | /usr/bin/grep -v "com.apple.ResourceFork" | /usr/bin/awk '{total += $2} END {print total}')
-[[ "$XATTR_SIZE" == "" ]] && XATTR_SIZE="0"
-XATTR_SIZE_MB=$(megabyte "$XATTR_SIZE")
-XATTR_SIZE_MIB=$(mebibyte "$XATTR_SIZE")
-XATTR_SIZE_INFO="$XATTR_SIZE B ($XATTR_SIZE_MB, $XATTR_SIZE_MIB)"
-
-# logical size (data+resources+xattr) = total size
-TOTAL_SIZE=$(echo "$RES_SIZE + $XATTR_SIZE + $DATA_SIZE" | /usr/bin/bc -l)
-TOTAL_SIZE_MB=$(megabyte "$TOTAL_SIZE")
-TOTAL_SIZE_MIB=$(mebibyte "$TOTAL_SIZE")
-TOTAL_SIZE_INFO="$TOTAL_SIZE B ($TOTAL_SIZE_MB, $TOTAL_SIZE_MIB)"
+echo -e "Physical Size (mdls):\t$PHYSICAL_SIZE_INFO"
 
 # logical size as reported by macOS (mdls) -- should be the same as total byte count
 LOGICAL_SIZE=$(echo "$MDLS" | /usr/bin/awk -F"= " '/kMDItemLogicalSize/{print $2}')
@@ -264,6 +237,7 @@ else
 	LOGICAL_SIZE_MIB=$(mebibyte "$LOGICAL_SIZE")
 	LOGICAL_SIZE_INFO="$LOGICAL_SIZE B ($LOGICAL_SIZE_MB, $LOGICAL_SIZE_MIB)"
 fi
+echo -e "Logical Size (mdls):\t$LOGICAL_SIZE_INFO"
 
 # file system size as reported by FS to macOS
 FS_SIZE=$(echo "$MDLS" | /usr/bin/awk -F"= " '/kMDItemFSSize/{print $2}' | /usr/bin/sed 's/^"\(.*\)"$/\1/')
@@ -274,59 +248,120 @@ else
 	FS_SIZE_MIB=$(mebibyte "$FS_SIZE")
 	FS_SIZE_INFO="$FS_SIZE B ($FS_SIZE_MB, $FS_SIZE_MIB)"
 fi
+echo -e "File System Size (mdls):\t$FS_SIZE_INFO"
+
+# data size (total byte count)
+DATA_SIZE=$(ls -Ral "$FILEPATH" | /usr/bin/grep -v '^d' | /usr/bin/awk '{total += $5} END {print total}')
+DATA_SIZE_MB=$(megabyte "$DATA_SIZE")
+DATA_SIZE_MIB=$(mebibyte "$DATA_SIZE")
+DATA_SIZE_INFO="$DATA_SIZE B ($DATA_SIZE_MB, $DATA_SIZE_MIB)"
+echo -e "Data Size (stat):\t$DATA_SIZE_INFO" # only the readable data parts of the total byte count
+
+# Resource fork size
+EXTRA_LIST=$(ls -Ral@ "$FILEPATH" | /usr/bin/awk 'NF<=2' | /usr/bin/sed -e '/^$/d' -e '/^total /d' -e '/^'"$SEDPATH"'/d')
+RES_SIZE=$(echo "$EXTRA_LIST" | /usr/bin/grep "com.apple.ResourceFork" | /usr/bin/awk '{total += $2} END {print total}')
+[[ "$RES_SIZE" == "" ]] && RES_SIZE="0"
+RES_SIZE_MB=$(megabyte "$RES_SIZE")
+RES_SIZE_MIB=$(mebibyte "$RES_SIZE")
+RES_SIZE_INFO="$RES_SIZE B ($RES_SIZE_MB, $RES_SIZE_MIB)"
+echo -e "Resource Forks (ls):\t$RES_SIZE_INFO" # only the resource fork parts of the total byte count
+
+# apparent size (stat total + resource forks)
+APPARENT_SIZE=$(echo "$RES_SIZE + $DATA_SIZE" | /usr/bin/bc -l)
+APPARENT_SIZE_MB=$(megabyte "$APPARENT_SIZE")
+APPARENT_SIZE_MIB=$(mebibyte "$APPARENT_SIZE")
+APPARENT_SIZE_INFO="$APPARENT_SIZE B ($APPARENT_SIZE_MB, $APPARENT_SIZE_MIB)"
+echo -e "Apparent Data Size:\t$APPARENT_SIZE_INFO"
+
+# Xattr size
+XATTR_SIZE=$(echo "$EXTRA_LIST" | /usr/bin/grep -v "com.apple.ResourceFork" | /usr/bin/awk '{total += $2} END {print total}')
+[[ "$XATTR_SIZE" == "" ]] && XATTR_SIZE="0"
+XATTR_SIZE_MB=$(megabyte "$XATTR_SIZE")
+XATTR_SIZE_MIB=$(mebibyte "$XATTR_SIZE")
+XATTR_SIZE_INFO="$XATTR_SIZE B ($XATTR_SIZE_MB, $XATTR_SIZE_MIB)"
+echo -e "Extended Attributes (ls):\t$XATTR_SIZE_INFO"
+
+# total size (data+resources+xattr) = total size
+TOTAL_SIZE=$(echo "$APPARENT_SIZE + $XATTR_SIZE" | /usr/bin/bc -l)
+TOTAL_SIZE_MB=$(megabyte "$TOTAL_SIZE")
+TOTAL_SIZE_MIB=$(mebibyte "$TOTAL_SIZE")
+TOTAL_SIZE_INFO="$TOTAL_SIZE B ($TOTAL_SIZE_MB, $TOTAL_SIZE_MIB)"
+echo -e "Total Data Size:\t$TOTAL_SIZE_INFO"
 
 # root size
-STATSIZE_B=$(echo "$STAT" | /usr/bin/awk '{print $8}')
-STATSIZE_MB=$(megabyte "$STATSIZE_B")
-STATSIZE_MIB=$(mebibyte "$STATSIZE_B")
-STATSIZE="$STATSIZE_B B ($STATSIZE_MB, $STATSIZE_MIB)"
 if [[ "$FTYPEX" == "Directory" ]] ; then
+	STATSIZE_B=$(echo "$STAT" | /usr/bin/awk '{print $8}')
+	STATSIZE_MB=$(megabyte "$STATSIZE_B")
+	STATSIZE_MIB=$(mebibyte "$STATSIZE_B")
+	STATSIZE="$STATSIZE_B B ($STATSIZE_MB, $STATSIZE_MIB)"
+	echo -e "Root Object Data (stat):\t$STATSIZE"
+
 	ROOT_LIST=$(ls -laO@ "$FILEPATH" | /usr/bin/tail -n +3)
-else
-	ROOT_LIST=$(ls -laO@ "$FILEPATH" | /usr/bin/tail -n +2)
+	CUTLINE=$(echo "$ROOT_LIST" | /usr/bin/grep "\ \.\.")
+	XTRASIZE="0"
+	while read -r EXTRA
+	do
+		if [[ "$EXTRA" == "$CUTLINE" ]] ; then
+			break
+		else
+			XTRA_ADD=$(echo "$EXTRA" | /usr/bin/awk '{print $2}')
+			XTRASIZE=$(echo "$XTRASIZE + $XTRA_ADD" | /usr/bin/bc -l)
+		fi
+	done < <(echo "$ROOT_LIST")
+	XTRASIZE_MB=$(megabyte "$XTRASIZE")
+	XTRASIZE_MIB=$(mebibyte "$XTRASIZE")
+	XTRASIZE_INFO="$XTRASIZE B ($XTRASIZE_MB, $XTRASIZE_MIB)"
+	echo -e "Root Object Xattr (ls):\t$XTRASIZE_INFO"
+
+	ROOT_TOTAL=$(echo "$STATSIZE_B + $XTRASIZE" | /usr/bin/bc -l)
+	ROOT_TOTAL_MB=$(megabyte "$ROOT_TOTAL")
+	ROOT_TOTAL_MIB=$(mebibyte "$ROOT_TOTAL")
+	ROOT_TSIZE="$ROOT_TOTAL B ($ROOT_TOTAL_MB, $ROOT_TOTAL_MIB)"
+	echo -e "Root Object Total Size:\t$ROOT_TSIZE"
 fi
-CUTLINE=$(echo "$ROOT_LIST" | /usr/bin/grep "\ \.\.")
-XTRASIZE="0"
-while read -r EXTRA
-do
-	if [[ "$EXTRA" == "$CUTLINE" ]] ; then
-		break
-	else
-		XTRA_ADD=$(echo "$EXTRA" | /usr/bin/awk '{print $2}')
-		XTRASIZE=$(echo "$XTRASIZE + $XTRA_ADD" | /usr/bin/bc -l)
-	fi
-done < <(echo "$ROOT_LIST")
 
-ROOT_TOTAL=$(echo "$STATSIZE_B + $XTRASIZE" | /usr/bin/bc -l)
-ROOT_TOTAL_MB=$(megabyte "$ROOT_TOTAL")
-ROOT_TOTAL_MIB=$(mebibyte "$ROOT_TOTAL")
-ROOT_TSIZE="$ROOT_TOTAL B ($ROOT_TOTAL_MB, $ROOT_TOTAL_MIB)"
+# stat info output
+INODE_DEV=$(echo "$STAT" | /usr/bin/awk '{print $1}')
+echo -e "Device:\t$INODE_DEV"
 
-# block size
+INODE=$(echo "$STAT" | /usr/bin/awk '{print $2}')
+echo -e "Inode:\t$INODE"
+
+RDEV=$(echo "$STAT" | /usr/bin/awk '{print $7}')
+echo -e "Device Type:\t$RDEV"
+
+BLOCKSNO=$(echo "$STATS" | /usr/bin/awk '{print $14}' | /usr/bin/awk -F= '{print $2}')
+echo -e "Blocks:\t$BLOCKSNO"
+
 BLOCKSIZE=$(echo "$STATS" | /usr/bin/awk '{print $13}' | /usr/bin/awk -F= '{print $2}')
+echo -e "Optimal Block Size:\t$BLOCKSIZE B"
 
-echo -e "Physical Size (du):\t$DU_SIZE_INFO" # object's actual disk usage size (might be smaller than virtual size due to HFS+ compression)
-echo -e "Physical Size (mdls):\t$PHYSICAL_SIZE_INFO" # physical size reported my macOS (can be a virtual value = uncompressed)
-echo -e "Logical Size (mdls):\t$LOGICAL_SIZE_INFO" # logical size reported by maOS (should be the same as total byte count minus xattr)
-echo -e "File System Size (mdls):\t$FS_SIZE_INFO" # alternate size reported by macOS (should be the same as logical size)
-echo -e "Total Data Size:\t$TOTAL_SIZE_INFO" # byte count total
-echo -e "Data Size (stat):\t$DATA_SIZE_INFO" # only the readable data parts of the total byte count
-echo -e "Extended Attributes (ls):\t$XATTR_SIZE_INFO" # only the xattr parts of the total byte count
-echo -e "Resource Forks (ls):\t$RES_SIZE_INFO" # only the resource fork parts of the total byte count
-echo -e "Root Object Total Size:\t$ROOT_TSIZE" # size of root object incl. xattr and resources
-echo -e "Root Object Size (stat):\t$STATSIZE" # only the size of the root object
+FLAGSA=$(echo "$STATS" | /usr/bin/awk '{print $15}' | /usr/bin/awk -F= '{print $2}')
+FLAGSB=$(echo "$STAT" | /usr/bin/awk -F"\"" '{print $9}' | /usr/bin/awk '{print $3}')
+USERFLAGS="$FLAGSB ($FLAGSA)"
+echo -e "System/User Flags:\t$USERFLAGS"
 
-# dates
-LASTACCESS=$(echo "$STAT" | /usr/bin/awk -F"\"" '{print $2}')
-LASTMODIFY=$(echo "$STAT" | /usr/bin/awk -F"\"" '{print $4}')
-LASTSTATUSCHANGE=$(echo "$STAT" | /usr/bin/awk -F"\"" '{print $6}')
-BIRTHTIME=$(echo "$STAT" | /usr/bin/awk -F"\"" '{print $8}')
-LASTUSED=$(echo "$MDLS" | /usr/bin/awk -F"= " '/kMDItemLastUsedDate/{print $2}')
-if [[ "$LASTUSED" == "" ]] || [[ "$LASTUSED" == "(null)" ]] ; then
-	LASTUSED="n/a"
-else
-	LASTUSED=$(/bin/date -f'%F %T %z' -j "$LASTUSED" | /usr/bin/awk '{print $2 " " $3 " " $4 " " $6}')
-fi
+FILEGENNO=$(/usr/bin/stat -f '%v')
+echo -e "File Generation Number:\t$FILEGENNO"
+
+MODEA=$(/usr/bin/stat -f '%A' "$FILEPATH")
+MODEB=$(echo "$STATS" | /usr/bin/awk '{print $3}' | /usr/bin/awk -F= '{print $2}')
+MODE="$MODEB ($MODEA)"
+echo -e "Mode:\t$MODE"
+
+HARDLINKS=$(echo "$STAT" | /usr/bin/awk '{print $4}')
+echo -e "Links:\t$HARDLINKS"
+
+PERMISSIONS=$(echo "$STAT" | /usr/bin/awk '{print $3}')
+echo -e "Permissions:\t$PERMISSIONS"
+
+UIDN=$(echo "$STAT" | /usr/bin/awk '{print $5}')
+UIDNO=$(echo "$STATS" | /usr/bin/awk '{print $5}' | /usr/bin/awk -F= '{print $2}')
+echo -e "Owner:\t$UIDN ($UIDNO)"
+
+GIDN=$(echo "$STAT" | /usr/bin/awk '{print $6}')
+GIDNO=$(echo "$STATS" | /usr/bin/awk '{print $6}' | /usr/bin/awk -F= '{print $2}')
+echo -e "Group:\t$GIDN ($GIDNO)"
 
 # ACL/ACE
 if [[ "$FTYPEX" == "Directory" ]] ; then
@@ -347,22 +382,6 @@ $ACE")
 	fi
 done < <(echo "$ACE_LIST")
 ACL=$(echo "$ACL" | /usr/bin/tail -n +2)
-
-echo -e "Device:\t$INODE_DEV"
-echo -e "Inode:\t$INODE"
-
-echo -e "Device Type:\t$RDEV"
-echo -e "Blocks:\t$BLOCKSNO"
-echo -e "Optimal Block Size:\t$BLOCKSIZE B"
-echo -e "System/User Flags:\t$USERFLAGS"
-echo -e "File Generation Number:\t$FILEGENNO"
-
-echo -e "Mode:\t$MODE"
-echo -e "Links:\t$HARDLINKS"
-echo -e "Permissions:\t$PERMISSIONS"
-echo -e "Owner:\t$UIDN ($UIDNO)"
-echo -e "Group:\t$GIDN ($GIDNO)"
-
 if [[ "$ACL" == "" ]] ; then
 	echo -e "ACE:\tnone"
 else
@@ -374,33 +393,69 @@ else
 	done < <(echo "$ACL")
 fi
 
+# dates
+BIRTHTIME=$(echo "$STAT" | /usr/bin/awk -F"\"" '{print $8}')
 echo -e "Created:\t$BIRTHTIME"
+
+LASTSTATUSCHANGE=$(echo "$STAT" | /usr/bin/awk -F"\"" '{print $6}')
 echo -e "Changed:\t$LASTSTATUSCHANGE"
+
+LASTMODIFY=$(echo "$STAT" | /usr/bin/awk -F"\"" '{print $4}')
 echo -e "Modified:\t$LASTMODIFY"
+
+LASTACCESS=$(echo "$STAT" | /usr/bin/awk -F"\"" '{print $2}')
 echo -e "Accessed:\t$LASTACCESS"
+
+LASTUSED=$(echo "$MDLS" | /usr/bin/awk -F"= " '/kMDItemLastUsedDate/{print $2}')
+if [[ "$LASTUSED" == "" ]] || [[ "$LASTUSED" == "(null)" ]] ; then
+	LASTUSED="n/a"
+else
+	LASTUSED=$(/bin/date -f'%F %T %z' -j "$LASTUSED" | /usr/bin/awk '{print $2 " " $3 " " $4 " " $6}')
+fi
 echo -e "Used:\t$LASTUSED"
 
-# method to read the default "open with" application for a file?
-
 # macOS security & App Store info
-GATEKEEPER=$(echo "$ASSESS" | /usr/bin/awk -F"=" '/override=/{print $2}')
+ASSESS=$(/usr/sbin/spctl -v --assess "$FILEPATH" 2>&1)
 
-SEC_STATUS=$(echo "$ASSESS" | /usr/bin/grep "$FILEPATH:" | /usr/bin/awk -F": " '{print $2}')
-
+# Source
 SOURCE=$(echo "$ASSESS" | /usr/bin/awk -F"=" '/source=/{print $2}')
-if [[ "$SOURCE" == "" ]] ; then
+if [[ "$SOURCE" == "" ]] || [[ "$SOURCE" == "obsolete resource envelope" ]] ; then
+	SPCTL_STATUS="context"
 	SOURCE=$(/usr/sbin/spctl -a -t open --context context:primary-signature -v "$FILEPATH" 2>&1 | /usr/bin/awk -F"=" '/source=/{print $2}')
+else
+	SPCTL_STATUS=""
+fi
+echo -e "Source:\t$SOURCE"
+
+# MAS receipt & Sandboxing
+if [[ "$BUNDLE_INFO" == "TRUE" ]] ; then
+	MAS_RECEIPT=$(echo "$MDLS" | /usr/bin/awk -F"= " '/kMDItemAppStoreHasReceipt/{print $2}')
+	if [[ "$MAS_RECEIPT" == "1" ]] ; then
+		APPSTORE="TRUE"
+	elif [[ "$MAS_RECEIPT" == "0" ]] ; then
+		 APPSTORE="FALSE"
+	else
+		if [[ -f "$FILEPATH/Contents/_MASReceipt/receipt" ]] ; then
+			APPSTORE="TRUE"
+		else
+			APPSTORE="FALSE"
+		fi
+	fi
+	echo -e "App Store Receipt:\t$APPSTORE"
 fi
 
+# Sandboxing
+ENTITLEMENTS=$(/usr/bin/codesign -d --entitlements - "$FILEPATH" 2>&1)
 SANDBOX=$(echo "$ENTITLEMENTS" | /usr/bin/awk '/com.apple.security.app-sandbox/ {getline;print}')
 if [[ $(echo "$SANDBOX" | /usr/bin/grep "true") != "" ]] ; then
 	SANDBOX_STATUS="TRUE"
 else
 	SANDBOX_STATUS="FALSE"
 fi
+echo -e "Sandboxed:\t$SANDBOX_STATUS"
 
+# Codesigning info
 EXEC_PATH_RAW=$(/usr/bin/codesign -d "$FILEPATH" 2>&1)
-
 if [[ $(echo "$EXEC_PATH_RAW" | /usr/bin/grep "not signed at all") != "" ]] ; then
 	CODESIGN_STATUS="FALSE" ; CODESIGN="n/a" ; CA_CERT="n/a" ; ICA="n/a" ; LEAF="n/a" ; SIGNED="n/a" ; TEAM_ID="n/a"
 elif [[ $(echo "$EXEC_PATH_RAW" | /usr/bin/grep "bundle format unrecognized, invalid, or unsuitable") != "" ]] ; then
@@ -456,22 +511,45 @@ else
 		fi
 	fi
 fi
+echo -e "Code Signature:\t$CODESIGN_STATUS"
+echo -e "Code Signing:\t$CODESIGN"
+echo -e "Certificate Authority:\t$CA_CERT"
+echo -e "Intermediate CA:\t$ICA"
+echo -e "Leaf Certificate:\t$LEAF"
+echo -e "Team Identifier:\t$TEAM_ID"
+echo -e "Signed:\t$SIGNED"
 
-MAS_RECEIPT=$(echo "$MDLS" | /usr/bin/awk -F"= " '/kMDItemAppStoreHasReceipt/{print $2}')
-if [[ "$MAS_RECEIPT" == "1" ]] ; then
-	APPSTORE="TRUE"
-elif [[ "$MAS_RECEIPT" == "0" ]] ; then
-	 APPSTORE="FALSE"
+# Gatekeeper
+if [[ "$SPCTL_STATUS" == "context" ]] ; then
+	SEC_STATUS=$(/usr/sbin/spctl -a -t open --context context:primary-signature -v "$FILEPATH" 2>&1 | /usr/bin/head -n +1 | /usr/bin/awk -F": " '{print $2}')
 else
-	if [[ -f "$FILEPATH/Contents/_MASReceipt/receipt" ]] ; then
-		APPSTORE="TRUE"
-	else
-		APPSTORE="FALSE"
-	fi
+	SEC_STATUS=$(echo "$ASSESS" | /usr/bin/grep "$FILEPATH:" | /usr/bin/awk -F": " '{print $2}')
 fi
+echo -e "Security:\t$SEC_STATUS"
+GATEKEEPER=$(echo "$ASSESS" | /usr/bin/awk -F"=" '/override=/{print $2}')
+echo -e "Gatekeeper:\t$GATEKEEPER"
+
+# Quarantine
+QUARANTINE=$(/usr/bin/xattr -p com.apple.quarantine "$FILEPATH" 2>&1)
+[[ $(echo "$QUARANTINE" | /usr/bin/grep "No such xattr: com.apple.quarantine") != "" ]] && QUARANTINE="FALSE"
+echo -e "Quarantine:\t$QUARANTINE"
+
+# Download info
+DL_SOURCE=$(echo "$MDLS" | /usr/bin/awk -F"\"" '/kMDItemWhereFroms/{getline;print $2}')
+if [[ "$DL_SOURCE" == "" ]] || [[ "$DL_SOURCE" == "(null)" ]] ; then
+	DL_SOURCE="n/a"
+fi
+echo -e "Download URL:\t$DL_SOURCE"
+DL_DATE_RAW=$(echo "$MDLS" | /usr/bin/awk -F"\"" '/kMDItemDownloadedDate/{getline;print $2}')
+if [[ "$DL_DATE_RAW" == "" ]] || [[ "$DL_DATE_RAW" == "(null)" ]] ; then
+	DL_DATE="n/a"
+else
+	DL_DATE=$(/bin/date -f'%F %T %z' -j "$DL_DATE_RAW" | /usr/bin/awk '{print $2 " " $3 " " $4 " " $6}')
+fi
+echo -e "Download Date:\t$DL_DATE"
 
 # read bundle's Info.plist
-if [[ "$TTYPE" == "Bundle" ]] ; then
+if [[ "$BUNDLE_INFO" == "TRUE" ]] ; then
 	PLIST_PATH="$FILEPATH/Contents/Info.plist"
 
 	if [[ ! -f "$PLIST_PATH" ]] ; then
@@ -558,69 +636,43 @@ if [[ "$TTYPE" == "Bundle" ]] ; then
 
 fi
 
-QUARANTINE=$(/usr/bin/xattr -p com.apple.quarantine "$FILEPATH" 2>&1)
-[[ $(echo "$QUARANTINE" | /usr/bin/grep "No such xattr: com.apple.quarantine") != "" ]] && QUARANTINE="FALSE"
-
-DL_SOURCE=$(echo "$MDLS" | /usr/bin/awk -F"\"" '/kMDItemWhereFroms/{getline;print $2}')
-if [[ "$DL_SOURCE" == "" ]] || [[ "$DL_SOURCE" == "(null)" ]] ; then
-	DL_SOURCE="n/a"
-fi
-
-DL_DATE_RAW=$(echo "$MDLS" | /usr/bin/awk -F"\"" '/kMDItemDownloadedDate/{getline;print $2}')
-if [[ "$DL_DATE_RAW" == "" ]] || [[ "$DL_DATE_RAW" == "(null)" ]] ; then
-	DL_DATE="n/a"
-else
-	DL_DATE=$(/bin/date -f'%F %T %z' -j "$DL_DATE_RAW" | /usr/bin/awk '{print $2 " " $3 " " $4 " " $6}')
-fi
-
-echo -e "Source:\t$SOURCE"
-echo -e "App Store Receipt:\t$APPSTORE"
-echo -e "Sandboxed:\t$SANDBOX_STATUS"
-echo -e "Code Signature:\t$CODESIGN_STATUS"
-echo -e "Code Signing:\t$CODESIGN"
-echo -e "Certificate Authority:\t$CA_CERT"
-echo -e "Intermediate CA:\t$ICA"
-echo -e "Leaf Certificate:\t$LEAF"
-echo -e "Team Identifier:\t$TEAM_ID"
-echo -e "Signed:\t$SIGNED"
-echo -e "Security:\t$SEC_STATUS"
-echo -e "Gatekeeper:\t$GATEKEEPER"
-
-echo -e "Quarantine:\t$QUARANTINE"
-echo -e "Download URL:\t$DL_SOURCE"
-echo -e "Download Date:\t$DL_DATE"
-
-# contains what?
+# directory contents
 if [[ "$FTYPEX" == "Directory" ]] ; then
 	FULL_LIST=$(ls -RalO "$FILEPATH" | /usr/bin/sed -e '/ .$/d' -e '/ ..$/d' -e '/^$/d' -e '/^total /d' -e '/^.\//d' -e '/^'"$SEDPATH"'/d')
 	if [[ "$FULL_LIST" != "" ]] ; then
+
+		ITEM_COUNT=$(echo "$FULL_LIST" | /usr/bin/wc -l | xargs) # total item count
+		echo -e "Contains:\t$ITEM_COUNT objects"
+
 		INV_CONTAIN=$(find "$FILEPATH" \( -iname ".*" \) | /usr/bin/wc -l | xargs) # invisible items
 		[[ "$INV_CONTAIN" == "" ]] && INV_CONTAIN="0"
+		echo -e "Invisible:\t$INV_CONTAIN"
+
 		DSSTORE_CONTAIN=$(find "$FILEPATH" \( -iname ".DS_Store" \) | /usr/bin/wc -l | xargs) # .DS_Store
 		[[ "$DSSTORE_CONTAIN" == "" ]] && DSSTORE_CONTAIN="0"
+		echo -e ".DS_Store:\t$DSSTORE_CONTAIN"
+
 		LOCAL_CONTAIN=$(find "$FILEPATH" \( -iname ".localized" \) | /usr/bin/wc -l | xargs) # .localized
 		[[ "$LOCAL_CONTAIN" == "" ]] && LOCAL_CONTAIN="0"
+		echo -e ".localized:\t$LOCAL_CONTAIN"
+
 		OTHER_INV=$(echo "$INV_CONTAIN - $DSSTORE_CONTAIN - $LOCAL_CONTAIN" | /usr/bin/bc -l) # other invisible items calculation
 		[[ "$OTHER_INV" == "" ]] && OTHER_INV="0"
-
-		CHFLAGS_ALL=$(echo "$FULL_LIST" | /usr/bin/awk '{print $5}')
-		FLAGS_COUNT=$(echo "$CHFLAGS_ALL" | /usr/bin/grep -v "-" | /usr/bin/awk '{gsub(","," ");print}'| /usr/bin/awk '{for(w=1;w<=NF;w++) print $w}' | /usr/bin/sort | /usr/bin/uniq -c | /usr/bin/sort -nr | /usr/bin/awk '{print $2 ":\t" $1}')
+		echo -e "Invisible (other):\t$OTHER_INV"
 
 		FTYPES_ALL=$(echo "$FULL_LIST" | /usr/bin/awk '{print $1}' | /usr/bin/cut -c 1)
 		FTYPES_COUNT=$(echo "$FTYPES_ALL" | /usr/bin/awk '{for(w=1;w<=NF;w++) print $w}' | /usr/bin/sort | /usr/bin/uniq -c | /usr/bin/sort -nr | /usr/bin/awk '{print $2 ":\t" $1}' \
 		| /usr/bin/sed -e '/^-:/s/-:/Files:/g' -e '/^d:/s/d:/Directories:/g' -e '/^l:/s/l:/Symbolic Links:/g' -e '/^p:/s/p:/Pipes\/FIFO:/g' -e '/^c:/s/c:/Character Devices:/g' -e '/^s:/s/s:/Sockets:/g' -e '/^b:/s/b:/Blocks:/g' -e '/^w:/s/w:/Whiteouts:/g')
-		# HFS+ cloaked files >>> HOW?
-		# HFS+ special file system files (locations, private data) >>> HOW?
-
-		ITEM_COUNT=$(echo "$FULL_LIST" | /usr/bin/wc -l | xargs) # total item count
-
-		echo -e "Contains:\t$ITEM_COUNT objects"
-		echo -e "Invisible:\t$INV_CONTAIN"
-		echo -e ".DS_Store:\t$DSSTORE_CONTAIN"
-		echo -e ".localized:\t$LOCAL_CONTAIN"
-		echo -e "Invisible (other):\t$OTHER_INV"
 		echo -e "$FTYPES_COUNT"
+		### HFS+ cloaked files >>> HOW?
+		### HFS+ special file system files (locations, private data) >>> HOW?
+
+		CHFLAGS_ALL=$(echo "$FULL_LIST" | /usr/bin/awk '{print $5}')
+		FLAGS_COUNT=$(echo "$CHFLAGS_ALL" | /usr/bin/grep -v "-" | /usr/bin/awk '{gsub(","," ");print}'| /usr/bin/awk '{for(w=1;w<=NF;w++) print $w}' | /usr/bin/sort | /usr/bin/uniq -c | /usr/bin/sort -nr | /usr/bin/awk '{print $2 ":\t" $1}')
+
+		### remove blank lines
 		echo -e "$FLAGS_COUNT"
+
 	else
 		echo -e "Contains:\t0 objects"
 	fi
