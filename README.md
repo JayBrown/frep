@@ -16,7 +16,9 @@ beta; already works, but might have some errors
 
 ```
 ❯ frep /Applications/TextEdit.app
-*** BEGIN FILE REPORT ***
+************************************************
+****************************	macOS File Report *
+************************************************
 Basename:	TextEdit.app
 Path:	/Applications
 Filesystem:	/dev/disk0s2
@@ -36,6 +38,7 @@ Type:	n/a
 Creator	n/a
 OpenMeta Tags:	n/a
 Finder Comment:	n/a
+Finder Flags:	0
 Hidden Extension:	TRUE
 Invisible:	FALSE
 Flags:	restricted
@@ -48,9 +51,9 @@ Resource Forks:	0 B
 Apparent Data Size:	6,423,871 B (6.42 MB, 6.13 MiB)
 Extended Attributes:	0 B
 Total Data Size:	6,423,871 B (6.42 MB, 6.13 MiB)
-Root Object Data Size:	102 B (102 B, 102 B)
+Root Object Data Size:	102 B
 Root Object Xattr:	0 B
-Root Object Total Size:	102 B (102 B, 102 B)
+Root Object Total Size:	102 B
 Device:	16777219
 Inode:	658757
 Device Type:	0
@@ -67,7 +70,7 @@ ACE 0:	group:everyone deny delete
 Created:	Aug 23 03:46:48 2015
 Changed:	May 17 00:07:52 2016
 Modified:	May 17 00:07:52 2016
-Accessed:	Mar 23 04:35:11 2017
+Accessed:	Mar 23 17:00:09 2017
 Used:	Mar 23 03:27:49 2017
 Source:	Apple System
 App Store Receipt:	FALSE
@@ -107,11 +110,6 @@ Contains:	782 items
 Files:	703
 Directories:	78
 Symbolic Links:	1
-Resource Forks:	0
 restricted:	782
 compressed:	693
-Invisible:	0
-.DS_Store:	0
-.localized:	0
-Invisible (other):	0
 ```
