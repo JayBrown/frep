@@ -1,9 +1,10 @@
 #!/bin/bash
 
-# frep v0.9.4 beta
+# frep v0.9.5 beta
 # macOS File Reporter
 
 LANG=en_US.UTF-8
+ACCOUNT=$(id -un)
 
 # set -x
 # PS4=':$LINENO+'
@@ -38,6 +39,33 @@ humandecimal () {
 
 for FILEPATH in "$@"
 do
+
+# check if exists
+if [[ ! -e "$FILEPATH" ]] ; then
+	echo "Error! $FILEPATH does not exist!"
+	continue
+fi
+
+# check if readable
+if [[ "$ACCOUNT" != "root" ]] ; then
+	if [[ ! -r "$FILEPATH" ]] ; then
+		echo "Error! Target is not readable."
+		echo "Please run the script again as root using 'sudo frep'."
+		continue
+	fi
+	if [[ -d "$FILEPATH" ]] ; then
+		echo "Running preliminary read permissions check."
+		echo "Please wait..."
+		cd "$FILEPATH"
+		NRCONTENT=$(find . ! -user "$ACCOUNT" -exec [ ! -r {} ] \; -print -quit)
+		cd /
+		if [[ "$NRCONTENT" != "" ]] ; then
+			echo "Error! At least one item is not readable."
+			echo "Please run the script again as root with 'sudo frep'"
+			continue
+		fi
+	fi
+fi
 
 tabs 30
 

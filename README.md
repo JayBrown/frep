@@ -11,11 +11,14 @@ beta; already works, but might have some errors
 ## Installation
 * `git clone`, `chmod +x`, and `ln -s` to one of your bin directories as e.g. `frep`
 * *alternative*: download, unpack, `chmod +x`, `mv` or `cp` to one of your bin directories as e.g. `frep`
+* **best practice:** run as root with `sudo frep <TARGET>` to bypass the preliminary check for read permissions
 
 ## Sample output
 
 ```
 ❯ frep /Applications/TextEdit.app
+Running preliminary read permissions check.
+Please wait...
 ************************************************
 ****************************	macOS File Report *
 ************************************************
@@ -54,7 +57,7 @@ Total Data Size:	6,423,871 B (6.42 MB, 6.13 MiB)
 Root Object Data Size:	102 B
 Root Object Xattr:	0 B
 Root Object Total Size:	102 B
-Device:	16777219
+Device:	16777218
 Inode:	658757
 Device Type:	0
 Blocks:	0
@@ -70,8 +73,8 @@ ACE 0:	group:everyone deny delete
 Created:	Aug 23 03:46:48 2015
 Changed:	May 17 00:07:52 2016
 Modified:	May 17 00:07:52 2016
-Accessed:	Mar 23 17:00:09 2017
-Used:	Mar 23 03:27:49 2017
+Accessed:	Mar 23 23:37:09 2017
+Used:	Mar 23 18:08:32 2017
 Source:	Apple System
 App Store Receipt:	FALSE
 Sandboxed:	TRUE
