@@ -218,7 +218,7 @@ CREATORCODE=$(echo "$MDLS" | /usr/bin/awk -F"= " '/kMDItemFSCreatorCode/{print $
 if [[ "$CREATORCODE" == "(null)" ]] || [[ "$CREATORCODE" == "" ]] ; then
 	CREATORCODE="n/a"
 fi
-echo -e "Creator\t$CREATORCODE"
+echo -e "Creator:\t$CREATORCODE"
 
 # OpenMeta
 TAGS=$(/usr/bin/mdls -raw -name kMDItemUserTags "$FILEPATH" | /usr/bin/sed -e '1,1d' -e '$d' | xargs)
@@ -619,7 +619,7 @@ if [[ $(echo "$EXEC_PATH_RAW" | /usr/bin/grep "not signed") == "" ]] ; then
 			TEAM_ID=$(echo "$CS_ALL" | /usr/bin/awk -F"=" '/TeamIdentifier/{print $2}')
 		else
 			SIGNED=$(echo "$CS_ALL" | /usr/bin/awk -F"=" '/Timestamp/{print $2}' | /usr/bin/awk '{print $2 " " $1 " " $4 " " $3}')
-			[[ "$SIGNED" == "" ]] && SIGNED="n/a"
+			[[ "$SIGNED" == "" ]] && SIGNED="no date"
 			TEAM_ID=$(echo "$CS_ALL" | /usr/bin/awk -F"=" '/TeamIdentifier/{print $2}')
 			[[ "$TEAM_ID" == "" ]] && TEAM_ID="n/a"
 			CS_CERTS=$(echo "$CS_ALL" | /usr/bin/grep "Authority")
