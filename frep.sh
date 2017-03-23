@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# frep v0.9.2 beta
+# frep v0.9.3 beta
 # macOS File Reporter
 
 LANG=en_US.UTF-8
@@ -8,35 +8,30 @@ LANG=en_US.UTF-8
 # set -x
 # PS4=':$LINENO+'
 
-# round function
-round () {
-	echo $(printf %.$2f $(echo "scale=$2;(((10^$2)*$1)+0.5)/(10^$2)" | /usr/bin/bc))
+# calculate human readable (binary)
+humanbinary () {
+    echo "$1" | /usr/bin/awk 'function human(x) {
+		s=" B   KiB MiB GiB TiB EiB PiB YiB ZiB"
+    	while (x>=1024 && length(s)>1)
+        	{x/=1024; s=substr(s,5)}
+    	s=substr(s,1,4)
+    	xf=(s==" B  ")?"%5d   ":"%8.2f"
+    	return sprintf( xf"%s\n", x, s)
+    }
+	{gsub(/^[0-9]+/, human($1)); print}' | xargs
 }
 
-# calculate megabyte or kilobyte
-megabyte () {
-	MB_RAW=$(/usr/bin/bc -l <<< "scale=6; $1/1000000")
-	MB_FINAL=$(round "$MB_RAW" 3)
-	if [[ "$MB_FINAL" == "0.000" ]] ; then
-		KB_RAW=$(/usr/bin/bc -l <<< "scale=6; $1/1000")
-		KB_FINAL=$(round "$KB_RAW" 3)
-		echo "$KB_FINAL kB"
-	else
-		echo "$MB_FINAL MB"
-	fi
-}
-
-# calculate mebibyte or kibibyte
-mebibyte () {
-	MIB_RAW=$(/usr/bin/bc -l <<< "scale=6; $1/1048576")
-	MIB_FINAL=$(round "$MIB_RAW" 3)
-	if [[ "$MIB_FINAL" == "0.000" ]] ; then
-		KIB_RAW=$(/usr/bin/bc -l <<< "scale=6; $1/1024")
-		KIB_FINAL=$(round "$KIB_RAW" 3)
-		echo "$KIB_FINAL kiB"
-	else
-		echo "$MIB_FINAL MiB"
-	fi
+# calculate human readable (decimal)
+humandecimal () {
+    echo "$1" | /usr/bin/awk 'function human(x) {
+		s=" B    KB  MB  GB  TB  EB  PB  YB  ZB"
+    	while (x>=1000 && length(s)>1)
+        	{x/=1000; s=substr(s,5)}
+    	s=substr(s,1,4)
+    	xf=(s==" B  ")?"%5d   ":"%8.2f"
+    	return sprintf( xf"%s\n", x, s)
+    }
+	{gsub(/^[0-9]+/, human($1)); print}' | xargs
 }
 
 for FILEPATH in "$@"
@@ -88,7 +83,7 @@ fi
 echo -e "Shared:\t$SHARED"
 
 # file type (Unix)
-LISTING=$(ls -alO "$FILEPATH" | /usr/bin/head -2 | /usr/bin/tail -1)
+LISTING=$(ls -aldO "$FILEPATH")
 [[ $(echo "$LISTING" | /usr/bin/grep "^-") != "" ]] && FTYPEX="File"
 [[ $(echo "$LISTING" | /usr/bin/grep "^d") != "" ]] && FTYPEX="Directory"
 [[ $(echo "$LISTING" | /usr/bin/grep "^l") != "" ]] && FTYPEX="Symbolic Link"
@@ -209,10 +204,11 @@ echo -e "Flags:\t$ROOTFLAGS"
 # actual disk usage size
 DISK_USAGE=$(/usr/bin/du -k -d 0 "$FILEPATH" | /usr/bin/head -n 1 | /usr/bin/awk '{print $1}')
 DU_SIZE=$(echo "$DISK_USAGE * 1024" | /usr/bin/bc -l)
-DU_SIZE_MB=$(megabyte "$DU_SIZE")
-DU_SIZE_MIB=$(mebibyte "$DU_SIZE")
-DU_SIZE_INFO="$DU_SIZE B ($DU_SIZE_MB, $DU_SIZE_MIB)"
-echo -e "Physical Size (du):\t$DU_SIZE_INFO"
+DU_SIZE_MB=$(humandecimal "$DU_SIZE")
+DU_SIZE_MIB=$(humanbinary "$DU_SIZE")
+DU_SIZE_T=$(echo "$DU_SIZE" | /usr/bin/awk '{printf("%'"'"'d\n",$1);}')
+DU_SIZE_INFO="$DU_SIZE_T B ($DU_SIZE_MB, $DU_SIZE_MIB)"
+echo -e "Disk Usage:\t$DU_SIZE_INFO"
 
 # physical size as reported by macOS (mdls) -- might be larger than actual disk usage (virtual size ignoring HFS+ compression)
 PHYSICAL_SIZE=$(echo "$MDLS" | /usr/bin/awk -F"= " '/kMDItemPhysicalSize/{print $2}')
@@ -221,11 +217,12 @@ if [[ "$PHYSICAL_SIZE" == "" ]] || [[ "$PHYSICAL_SIZE" == "(null)" ]] ; then
 	PHYSICAL_SIZE_INFO="n/a"
 else
 	PHYS="true"
-	PHYSICAL_SIZE_MB=$(megabyte "$PHYSICAL_SIZE")
-	PHYSICAL_SIZE_MIB=$(mebibyte "$PHYSICAL_SIZE")
-	PHYSICAL_SIZE_INFO="$PHYSICAL_SIZE B ($PHYSICAL_SIZE_MB, $PHYSICAL_SIZE_MIB)"
+	PHYSICAL_SIZE_MB=$(humandecimal "$PHYSICAL_SIZE")
+	PHYSICAL_SIZE_MIB=$(humanbinary "$PHYSICAL_SIZE")
+	PHYSICAL_SIZE_T=$(echo "$PHYSICAL_SIZE" | /usr/bin/awk '{printf("%'"'"'d\n",$1);}')
+	PHYSICAL_SIZE_INFO="$PHYSICAL_SIZE_T B ($PHYSICAL_SIZE_MB, $PHYSICAL_SIZE_MIB)"
 fi
-echo -e "Physical Size (mdls):\t$PHYSICAL_SIZE_INFO"
+echo -e "Physical Size:\t$PHYSICAL_SIZE_INFO"
 
 # logical size as reported by macOS (mdls) -- should be the same as total byte count
 LOGICAL_SIZE=$(echo "$MDLS" | /usr/bin/awk -F"= " '/kMDItemLogicalSize/{print $2}')
@@ -233,68 +230,87 @@ if [[ "$LOGICAL_SIZE" == "" ]] || [[ "$LOGICAL_SIZE" == "(null)" ]] ; then
 	LOGICAL="false"
 	LOGICAL_SIZE_INFO="n/a"
 else
-	LOGICAL_SIZE_MB=$(megabyte "$LOGICAL_SIZE")
-	LOGICAL_SIZE_MIB=$(mebibyte "$LOGICAL_SIZE")
-	LOGICAL_SIZE_INFO="$LOGICAL_SIZE B ($LOGICAL_SIZE_MB, $LOGICAL_SIZE_MIB)"
+	LOGICAL_SIZE_MB=$(humandecimal "$LOGICAL_SIZE")
+	LOGICAL_SIZE_MIB=$(humanbinary "$LOGICAL_SIZE")
+	LOGICAL_SIZE_T=$(echo "$LOGICAL_SIZE" | /usr/bin/awk '{printf("%'"'"'d\n",$1);}')
+	LOGICAL_SIZE_INFO="$LOGICAL_SIZE_T B ($LOGICAL_SIZE_MB, $LOGICAL_SIZE_MIB)"
 fi
-echo -e "Logical Size (mdls):\t$LOGICAL_SIZE_INFO"
+echo -e "Logical Size:\t$LOGICAL_SIZE_INFO"
 
 # file system size as reported by FS to macOS
 FS_SIZE=$(echo "$MDLS" | /usr/bin/awk -F"= " '/kMDItemFSSize/{print $2}' | /usr/bin/sed 's/^"\(.*\)"$/\1/')
 if [[ "$FS_SIZE" == "" ]] || [[ "$FS_SIZE" == "(null)" ]] ; then
 	FS_SIZE_INFO="n/a"
 else
-	FS_SIZE_MB=$(megabyte "$FS_SIZE")
-	FS_SIZE_MIB=$(mebibyte "$FS_SIZE")
-	FS_SIZE_INFO="$FS_SIZE B ($FS_SIZE_MB, $FS_SIZE_MIB)"
+	FS_SIZE_MB=$(humandecimal "$FS_SIZE")
+	FS_SIZE_MIB=$(humanbinary "$FS_SIZE")
+	FS_SIZE_T=$(echo "$FS_SIZE" | /usr/bin/awk '{printf("%'"'"'d\n",$1);}')
+	FS_SIZE_INFO="$FS_SIZE_T B ($FS_SIZE_MB, $FS_SIZE_MIB)"
 fi
-echo -e "File System Size (mdls):\t$FS_SIZE_INFO"
+echo -e "File System Size:\t$FS_SIZE_INFO"
+
+# total list
+TOTAL_LIST=$(ls -RalO@ "$FILEPATH" | /usr/bin/sed -e '/^$/d' -e '/^'"$SEDPATH"'/d')
+SIZE_LIST=$(echo "$TOTAL_LIST" | /usr/bin/awk 'NF>2')
 
 # data size (total byte count)
-DATA_SIZE=$(ls -Ral "$FILEPATH" | /usr/bin/grep -v '^d' | /usr/bin/awk '{total += $5} END {print total}')
-DATA_SIZE_MB=$(megabyte "$DATA_SIZE")
-DATA_SIZE_MIB=$(mebibyte "$DATA_SIZE")
-DATA_SIZE_INFO="$DATA_SIZE B ($DATA_SIZE_MB, $DATA_SIZE_MIB)"
-echo -e "Data Size (stat):\t$DATA_SIZE_INFO" # only the readable data parts of the total byte count
+DATA_SIZE=$(echo "$SIZE_LIST" | /usr/bin/grep -v '^d' | /usr/bin/awk '{total += $6} END {printf "%.0f", total}')
+DATA_SIZE_MB=$(humandecimal "$DATA_SIZE")
+DATA_SIZE_MIB=$(humanbinary "$DATA_SIZE")
+DATA_SIZE_T=$(echo "$DATA_SIZE" | /usr/bin/awk '{printf("%'"'"'d\n",$1);}')
+DATA_SIZE_INFO="$DATA_SIZE_T B ($DATA_SIZE_MB, $DATA_SIZE_MIB)"
+echo -e "Data Size:\t$DATA_SIZE_INFO" # only the readable data parts of the total byte count
 
 # Resource fork size
-EXTRA_LIST=$(ls -Ral@ "$FILEPATH" | /usr/bin/awk 'NF<=2' | /usr/bin/sed -e '/^$/d' -e '/^total /d' -e '/^'"$SEDPATH"'/d')
-RES_SIZE=$(echo "$EXTRA_LIST" | /usr/bin/grep "com.apple.ResourceFork" | /usr/bin/awk '{total += $2} END {print total}')
-[[ "$RES_SIZE" == "" ]] && RES_SIZE="0"
-RES_SIZE_MB=$(megabyte "$RES_SIZE")
-RES_SIZE_MIB=$(mebibyte "$RES_SIZE")
-RES_SIZE_INFO="$RES_SIZE B ($RES_SIZE_MB, $RES_SIZE_MIB)"
-echo -e "Resource Forks (ls):\t$RES_SIZE_INFO" # only the resource fork parts of the total byte count
+EXTRA_LIST=$(echo "$TOTAL_LIST" | /usr/bin/awk 'NF<=2' | /usr/bin/sed -e '/^total /d' -e '/^'"$SEDPATH"'/d')
+RES_SIZE=$(echo "$EXTRA_LIST" | /usr/bin/grep "com.apple.ResourceFork" | /usr/bin/awk '{total += $2} END {printf "%.0f", total}')
+if [[ "$RES_SIZE" != "" ]] && [[ "$RES_SIZE" != "0" ]]; then
+	RES_SIZE_MB=$(humandecimal "$RES_SIZE")
+	RES_SIZE_MIB=$(humanbinary "$RES_SIZE")
+	RES_SIZE_T=$(echo "$RES_SIZE" | /usr/bin/awk '{printf("%'"'"'d\n",$1);}')
+	RES_SIZE_INFO="$RES_SIZE_T B ($RES_SIZE_MB, $RES_SIZE_MIB)"
+else
+	RES_SIZE="0"
+	RES_SIZE_INFO="0 B"
+fi
+echo -e "Resource Forks:\t$RES_SIZE_INFO" # only the resource fork parts of the total byte count
 
 # apparent size (stat total + resource forks)
 APPARENT_SIZE=$(echo "$RES_SIZE + $DATA_SIZE" | /usr/bin/bc -l)
-APPARENT_SIZE_MB=$(megabyte "$APPARENT_SIZE")
-APPARENT_SIZE_MIB=$(mebibyte "$APPARENT_SIZE")
-APPARENT_SIZE_INFO="$APPARENT_SIZE B ($APPARENT_SIZE_MB, $APPARENT_SIZE_MIB)"
+APPARENT_SIZE_MB=$(humandecimal "$APPARENT_SIZE")
+APPARENT_SIZE_MIB=$(humanbinary "$APPARENT_SIZE")
+APPARENT_SIZE_T=$(echo "$APPARENT_SIZE" | /usr/bin/awk '{printf("%'"'"'d\n",$1);}')
+APPARENT_SIZE_INFO="$APPARENT_SIZE_T B ($APPARENT_SIZE_MB, $APPARENT_SIZE_MIB)"
 echo -e "Apparent Data Size:\t$APPARENT_SIZE_INFO"
 
 # Xattr size
-XATTR_SIZE=$(echo "$EXTRA_LIST" | /usr/bin/grep -v "com.apple.ResourceFork" | /usr/bin/awk '{total += $2} END {print total}')
-[[ "$XATTR_SIZE" == "" ]] && XATTR_SIZE="0"
-XATTR_SIZE_MB=$(megabyte "$XATTR_SIZE")
-XATTR_SIZE_MIB=$(mebibyte "$XATTR_SIZE")
-XATTR_SIZE_INFO="$XATTR_SIZE B ($XATTR_SIZE_MB, $XATTR_SIZE_MIB)"
-echo -e "Extended Attributes (ls):\t$XATTR_SIZE_INFO"
+XATTR_SIZE=$(echo "$EXTRA_LIST" | /usr/bin/grep -v "com.apple.ResourceFork" | /usr/bin/awk '{total += $2} END {printf "%.0f", total}')
+if [[ "$XATTR_SIZE" != "" ]] && [[ "$XATTR_SIZE" != "0" ]] ; then
+	XATTR_SIZE_MB=$(humandecimal "$XATTR_SIZE")
+	XATTR_SIZE_MIB=$(humanbinary "$XATTR_SIZE")
+	XATTR_SIZE_T=$(echo "$XATTR_SIZE" | /usr/bin/awk '{printf("%'"'"'d\n",$1);}')
+	XATTR_SIZE_INFO="$XATTR_SIZE_T B ($XATTR_SIZE_MB, $XATTR_SIZE_MIB)"
+else
+	XATTR_SIZE="0"
+	XATTR_SIZE_INFO="0 B"
+fi
+echo -e "Extended Attributes:\t$XATTR_SIZE_INFO"
 
 # total size (data+resources+xattr) = total size
 TOTAL_SIZE=$(echo "$APPARENT_SIZE + $XATTR_SIZE" | /usr/bin/bc -l)
-TOTAL_SIZE_MB=$(megabyte "$TOTAL_SIZE")
-TOTAL_SIZE_MIB=$(mebibyte "$TOTAL_SIZE")
-TOTAL_SIZE_INFO="$TOTAL_SIZE B ($TOTAL_SIZE_MB, $TOTAL_SIZE_MIB)"
+TOTAL_SIZE_MB=$(humandecimal "$TOTAL_SIZE")
+TOTAL_SIZE_MIB=$(humanbinary "$TOTAL_SIZE")
+TOTAL_SIZE_T=$(echo "$TOTAL_SIZE" | /usr/bin/awk '{printf("%'"'"'d\n",$1);}')
+TOTAL_SIZE_INFO="$TOTAL_SIZE_T B ($TOTAL_SIZE_MB, $TOTAL_SIZE_MIB)"
 echo -e "Total Data Size:\t$TOTAL_SIZE_INFO"
 
 # root size
 if [[ "$FTYPEX" == "Directory" ]] ; then
 	STATSIZE_B=$(echo "$STAT" | /usr/bin/awk '{print $8}')
-	STATSIZE_MB=$(megabyte "$STATSIZE_B")
-	STATSIZE_MIB=$(mebibyte "$STATSIZE_B")
+	STATSIZE_MB=$(humandecimal "$STATSIZE_B")
+	STATSIZE_MIB=$(humanbinary "$STATSIZE_B")
 	STATSIZE="$STATSIZE_B B ($STATSIZE_MB, $STATSIZE_MIB)"
-	echo -e "Root Object Data (stat):\t$STATSIZE"
+	echo -e "Root Object Data Size:\t$STATSIZE"
 
 	ROOT_LIST=$(ls -laO@ "$FILEPATH" | /usr/bin/tail -n +3)
 	CUTLINE=$(echo "$ROOT_LIST" | /usr/bin/grep "\ \.\.")
@@ -308,14 +324,18 @@ if [[ "$FTYPEX" == "Directory" ]] ; then
 			XTRASIZE=$(echo "$XTRASIZE + $XTRA_ADD" | /usr/bin/bc -l)
 		fi
 	done < <(echo "$ROOT_LIST")
-	XTRASIZE_MB=$(megabyte "$XTRASIZE")
-	XTRASIZE_MIB=$(mebibyte "$XTRASIZE")
-	XTRASIZE_INFO="$XTRASIZE B ($XTRASIZE_MB, $XTRASIZE_MIB)"
-	echo -e "Root Object Xattr (ls):\t$XTRASIZE_INFO"
+	if [[ "$XTRASIZE" != "0" ]] ; then
+		XTRASIZE_MB=$(humandecimal "$XTRASIZE")
+		XTRASIZE_MIB=$(humanbinary "$XTRASIZE")
+		XTRASIZE_INFO="$XTRASIZE B ($XTRASIZE_MB, $XTRASIZE_MIB)"
+	else
+		XTRASIZE_INFO="0 B"
+	fi
+	echo -e "Root Object Xattr:\t$XTRASIZE_INFO"
 
 	ROOT_TOTAL=$(echo "$STATSIZE_B + $XTRASIZE" | /usr/bin/bc -l)
-	ROOT_TOTAL_MB=$(megabyte "$ROOT_TOTAL")
-	ROOT_TOTAL_MIB=$(mebibyte "$ROOT_TOTAL")
+	ROOT_TOTAL_MB=$(humandecimal "$ROOT_TOTAL")
+	ROOT_TOTAL_MIB=$(humanbinary "$ROOT_TOTAL")
 	ROOT_TSIZE="$ROOT_TOTAL B ($ROOT_TOTAL_MB, $ROOT_TOTAL_MIB)"
 	echo -e "Root Object Total Size:\t$ROOT_TSIZE"
 fi
@@ -365,22 +385,33 @@ echo -e "Group:\t$GIDN ($GIDNO)"
 
 # ACL/ACE
 if [[ "$FTYPEX" == "Directory" ]] ; then
-	ACE_LIST=$(ls -lae "$FILEPATH" | /usr/bin/tail -n +3)
+	ACE_LIST=$(ls -lae "$FILEPATH" | /usr/bin/sed -n '/\ \.$/,$p' | /usr/bin/tail -n +2)
 else
 	ACE_LIST=$(ls -lae "$FILEPATH" | /usr/bin/tail -n +2)
 fi
-CUTLINE=$(echo "$ACE_LIST" | /usr/bin/grep "\ \.\.")
+
 ACL=""
-while read -r ACE
-do
-	if [[ "$ACE" == "$CUTLINE" ]] ; then
-		break
-	else
+if [[ "$FTYPEX" == "Directory" ]] ; then
+	CUTLINE=$(echo "$ACE_LIST" | /usr/bin/grep "\ \.\.")
+	while read -r ACE
+	do
+		if [[ "$ACE" == "$CUTLINE" ]] ; then
+			break
+		else
+			ACE=$(echo "$ACE" | /usr/bin/awk -F": " '{print substr($0, index($0,$2))}')
+			ACL=$(echo "$ACL
+$ACE")
+		fi
+	done < <(echo "$ACE_LIST")
+else
+	while read -r ACE
+	do
 		ACE=$(echo "$ACE" | /usr/bin/awk -F": " '{print substr($0, index($0,$2))}')
 		ACL=$(echo "$ACL
 $ACE")
-	fi
-done < <(echo "$ACE_LIST")
+	done < <(echo "$ACE_LIST")
+fi
+
 ACL=$(echo "$ACL" | /usr/bin/tail -n +2)
 if [[ "$ACL" == "" ]] ; then
 	echo -e "ACE:\tnone"
@@ -638,27 +669,14 @@ fi
 
 # directory contents
 if [[ "$FTYPEX" == "Directory" ]] ; then
-	FULL_LIST=$(ls -RalO "$FILEPATH" | /usr/bin/sed -e '/ .$/d' -e '/ ..$/d' -e '/^$/d' -e '/^total /d' -e '/^.\//d' -e '/^'"$SEDPATH"'/d')
+	FULL_LIST=$(echo "$TOTAL_LIST" | /usr/bin/awk 'NF>2' | /usr/bin/sed -e '/\ \.$/d' -e '/\ \.\.$/d' -e '/^.\//d')
 	if [[ "$FULL_LIST" != "" ]] ; then
 
+		RES_NUMBER=$(echo "$TOTAL_LIST" | /usr/bin/grep "com.apple.ResourceFork" | /usr/bin/wc -l | xargs)
+
 		ITEM_COUNT=$(echo "$FULL_LIST" | /usr/bin/wc -l | xargs) # total item count
-		echo -e "Contains:\t$ITEM_COUNT objects"
-
-		INV_CONTAIN=$(find "$FILEPATH" \( -iname ".*" \) | /usr/bin/wc -l | xargs) # invisible items
-		[[ "$INV_CONTAIN" == "" ]] && INV_CONTAIN="0"
-		echo -e "Invisible:\t$INV_CONTAIN"
-
-		DSSTORE_CONTAIN=$(find "$FILEPATH" \( -iname ".DS_Store" \) | /usr/bin/wc -l | xargs) # .DS_Store
-		[[ "$DSSTORE_CONTAIN" == "" ]] && DSSTORE_CONTAIN="0"
-		echo -e ".DS_Store:\t$DSSTORE_CONTAIN"
-
-		LOCAL_CONTAIN=$(find "$FILEPATH" \( -iname ".localized" \) | /usr/bin/wc -l | xargs) # .localized
-		[[ "$LOCAL_CONTAIN" == "" ]] && LOCAL_CONTAIN="0"
-		echo -e ".localized:\t$LOCAL_CONTAIN"
-
-		OTHER_INV=$(echo "$INV_CONTAIN - $DSSTORE_CONTAIN - $LOCAL_CONTAIN" | /usr/bin/bc -l) # other invisible items calculation
-		[[ "$OTHER_INV" == "" ]] && OTHER_INV="0"
-		echo -e "Invisible (other):\t$OTHER_INV"
+		ITEM_FULL=$(echo "$ITEM_COUNT + $RES_NUMBER" | /usr/bin/bc -l)
+		echo -e "Contains:\t$ITEM_FULL items"
 
 		FTYPES_ALL=$(echo "$FULL_LIST" | /usr/bin/awk '{print $1}' | /usr/bin/cut -c 1)
 		FTYPES_COUNT=$(echo "$FTYPES_ALL" | /usr/bin/awk '{for(w=1;w<=NF;w++) print $w}' | /usr/bin/sort | /usr/bin/uniq -c | /usr/bin/sort -nr | /usr/bin/awk '{print $2 ":\t" $1}' \
@@ -667,17 +685,37 @@ if [[ "$FTYPEX" == "Directory" ]] ; then
 		### HFS+ cloaked files >>> HOW?
 		### HFS+ special file system files (locations, private data) >>> HOW?
 
+		echo -e "Resource Forks:\t$RES_NUMBER"
+
 		CHFLAGS_ALL=$(echo "$FULL_LIST" | /usr/bin/awk '{print $5}')
 		FLAGS_COUNT=$(echo "$CHFLAGS_ALL" | /usr/bin/grep -v "-" | /usr/bin/awk '{gsub(","," ");print}'| /usr/bin/awk '{for(w=1;w<=NF;w++) print $w}' | /usr/bin/sort | /usr/bin/uniq -c | /usr/bin/sort -nr | /usr/bin/awk '{print $2 ":\t" $1}')
+		[[ "$FLAGS_COUNT" != "" ]] && echo -e "$FLAGS_COUNT"
 
-		### remove blank lines
-		echo -e "$FLAGS_COUNT"
+		INV_LIST=$(echo "$FULL_LIST" | /usr/bin/awk '{print $10}')
+		INV_CONTAIN=$(echo "$INV_LIST" | /usr/bin/grep "^\." | /usr/bin/wc -l | xargs)
+		# $(find "$FILEPATH" \( -iname ".*" \) | /usr/bin/wc -l | xargs)
+		# [[ "$INV_CONTAIN" == "" ]] && INV_CONTAIN="0"
+		echo -e "Invisible:\t$INV_CONTAIN"
+
+		DSSTORE_CONTAIN=$(echo "$INV_LIST" | /usr/bin/grep "^\.DS_Store" | /usr/bin/wc -l | xargs)
+		# $(find "$FILEPATH" \( -iname ".DS_Store" \) | /usr/bin/wc -l | xargs)
+		# [[ "$DSSTORE_CONTAIN" == "" ]] && DSSTORE_CONTAIN="0"
+		echo -e ".DS_Store:\t$DSSTORE_CONTAIN"
+
+		LOCAL_CONTAIN=$(echo "$INV_LIST" | /usr/bin/grep "^\.localized" | /usr/bin/wc -l | xargs)
+		# $(find "$FILEPATH" \( -iname ".localized" \) | /usr/bin/wc -l | xargs)
+		# [[ "$LOCAL_CONTAIN" == "" ]] && LOCAL_CONTAIN="0"
+		echo -e ".localized:\t$LOCAL_CONTAIN"
+
+		OTHER_INV=$(echo "$INV_CONTAIN - $DSSTORE_CONTAIN - $LOCAL_CONTAIN" | /usr/bin/bc -l)
+		[[ "$OTHER_INV" == "" ]] && OTHER_INV="0"
+		echo -e "Invisible (other):\t$OTHER_INV"
 
 	else
-		echo -e "Contains:\t0 objects"
+		echo -e "Contains:\t0 items"
 	fi
 else
-	echo -e "Contains:\t0 objects"
+	echo -e "Contains:\t0 items"
 fi
 
 done
