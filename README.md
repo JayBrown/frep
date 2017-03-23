@@ -22,9 +22,9 @@ Path:	/Applications
 Filesystem:	/dev/disk0s2
 Mount Point:	/
 Volume Name:	Macintosh HD
+Spotlight:	enabled
 Shared:	FALSE
 File Type:	Directory
-Reference:	n/a
 Sticky Bit:	FALSE
 GUID:	not set
 SUID:	not set
@@ -34,39 +34,24 @@ Uniform Type Identifier:	com.apple.application-bundle
 Kind:	Application
 Type:	n/a
 Creator	n/a
-OpenMeta Tags:	not tagged
+OpenMeta Tags:	n/a
 Finder Comment:	n/a
-Invisible:	FALSE
 Hidden Extension:	TRUE
-Hidden:	FALSE
-Opaque:	FALSE
-Restricted:	TRUE
-Compressed:	FALSE
-Immutable (User):	FALSE
-Immutable (System):	FALSE
-Append (User):	FALSE
-Append (System):	FALSE
-No Unlink (User):	FALSE
-No Unlink (System): 	FALSE
-No Dump:	FALSE
-Archived:	FALSE
-Snapshot:	FALSE
-Offline:	FALSE
-Sparse:	FALSE
-Read-Only (Windows):	FALSE
-Reparse (Windows):	FALSE
-System (Windows):	FALSE
-Physical Size (du):	4538368 B (4.538 MB, 4.328 MiB)
-Physical Size (mdls):	8646656 B (8.647 MB, 8.246 MiB)
-Logical Size (mdls):	6423871 B (6.424 MB, 6.126 MiB)
-File System Size (mdls):	6423871 B (6.424 MB, 6.126 MiB)
-Total Data Size:	6423871 B (6.424 MB, 6.126 MiB)
-Data Size (stat):	6423871 B (6.424 MB, 6.126 MiB)
-Extended Attributes (ls):	0 B (0.000 kB, 0.000 kiB)
-Resource Forks (ls):	0 B (0.000 kB, 0.000 kiB)
-Root Object Total Size:	102 B (0.102 kB, 0.100 kiB)
-Root Object Size (stat):	102 B (0.102 kB, 0.100 kiB)
-Device:	16777218
+Invisible:	FALSE
+Flags:	restricted
+Disk Usage:	4,538,368 B (4.54 MB, 4.33 MiB)
+Physical Size:	8,646,656 B (8.65 MB, 8.25 MiB)
+Logical Size:	6,423,871 B (6.42 MB, 6.13 MiB)
+File System Size:	6,423,871 B (6.42 MB, 6.13 MiB)
+Data Size:	6,423,871 B (6.42 MB, 6.13 MiB)
+Resource Forks:	0 B
+Apparent Data Size:	6,423,871 B (6.42 MB, 6.13 MiB)
+Extended Attributes:	0 B
+Total Data Size:	6,423,871 B (6.42 MB, 6.13 MiB)
+Root Object Data Size:	102 B (102 B, 102 B)
+Root Object Xattr:	0 B
+Root Object Total Size:	102 B (102 B, 102 B)
+Device:	16777219
 Inode:	658757
 Device Type:	0
 Blocks:	0
@@ -82,8 +67,8 @@ ACE 0:	group:everyone deny delete
 Created:	Aug 23 03:46:48 2015
 Changed:	May 17 00:07:52 2016
 Modified:	May 17 00:07:52 2016
-Accessed:	Mar 21 13:01:07 2017
-Used:	Mar 21 12:18:42 2017
+Accessed:	Mar 23 04:35:11 2017
+Used:	Mar 23 03:27:49 2017
 Source:	Apple System
 App Store Receipt:	FALSE
 Sandboxed:	TRUE
@@ -99,35 +84,34 @@ Gatekeeper:	security disabled
 Quarantine:	FALSE
 Download URL:	n/a
 Download Date:	n/a
-Contains:	782 objects
-Directories:	78
+Info.plist:	TRUE
+Bundle Name:	TextEdit
+Bundle Executable:	TextEdit
+Executable Type:	Mach-O 64-bit executable x86_64
+Bundle OS Type:	APPL
+Principal Class:	NSApplication
+Bundle Version:	1.11
+Bundle Identifier:	com.apple.TextEdit
+Copyright:	Copyright © 1995-2015, Apple Inc. All rights reserved.
+Bundle Development Region:	English
+Build Machine OS Build:	15W4247
+Compiler:	com.apple.compilers.llvm.clang.1_0
+Platform Build:	15W4247
+Platform Version:	GM
+SDK Build:	15W4247
+SDK Name:	macosx10.11internal
+XCode:	0700
+Xcode Build:	7A176g
+Minimum System Version:	10.10
+Contains:	782 items
 Files:	703
+Directories:	78
 Symbolic Links:	1
-Pipes/FIFO:	0
-Sockets:	0
-Character Devices:	0
-Blocks:	0
-Whiteouts:	0
+Resource Forks:	0
+restricted:	782
+compressed:	693
 Invisible:	0
 .DS_Store:	0
 .localized:	0
 Invisible (other):	0
-Hidden:	0
-Opaque:	0
-Restricted:	782
-Compressed:	693
-Immutable (User):	0
-Immutable (System):	0
-Append (User):	0
-Append (System):	0
-No Unlink (User):	0
-No Unlink (System): 	0
-No Dump:	0
-Archived:	0
-Snapshot:	0
-Offline:	0
-Sparse:	0
-Read-Only (Windows):	0
-Reparse (Windows):	0
-System (Windows):	0
 ```
