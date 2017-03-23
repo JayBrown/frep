@@ -385,7 +385,7 @@ echo -e "Group:\t$GIDN ($GIDNO)"
 
 # ACL/ACE
 if [[ "$FTYPEX" == "Directory" ]] ; then
-	ACE_LIST=$(ls -lae "$FILEPATH" | /usr/bin/sed -n '/\ \.$/,$p' | /usr/bin/tail -n +2)
+	ACE_LIST=$(ls -lae "$FILEPATH" | /usr/bin/sed -n '/^-.* \..*$/!p' | /usr/bin/sed -n '/\ \.$/,$p' | /usr/bin/tail -n +2)
 else
 	ACE_LIST=$(ls -lae "$FILEPATH" | /usr/bin/tail -n +2)
 fi
