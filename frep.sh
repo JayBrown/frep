@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# frep v0.9.3 beta
+# frep v0.9.4 beta
 # macOS File Reporter
 
 LANG=en_US.UTF-8
@@ -10,7 +10,7 @@ LANG=en_US.UTF-8
 
 # calculate human readable (binary)
 humanbinary () {
-    echo "$1" | /usr/bin/awk 'function human(x) {
+    BINSIZE=$(echo "$1" | /usr/bin/awk 'function human(x) {
 		s=" B   KiB MiB GiB TiB EiB PiB YiB ZiB"
     	while (x>=1024 && length(s)>1)
         	{x/=1024; s=substr(s,5)}
@@ -18,12 +18,13 @@ humanbinary () {
     	xf=(s==" B  ")?"%5d   ":"%8.2f"
     	return sprintf( xf"%s\n", x, s)
     }
-	{gsub(/^[0-9]+/, human($1)); print}' | xargs
+	{gsub(/^[0-9]+/, human($1)); print}' | xargs)
+	[[ "$BINSIZE" != *" B" ]] && echo "$BINSIZE"
 }
 
 # calculate human readable (decimal)
 humandecimal () {
-    echo "$1" | /usr/bin/awk 'function human(x) {
+    DECSIZE=$(echo "$1" | /usr/bin/awk 'function human(x) {
 		s=" B    KB  MB  GB  TB  EB  PB  YB  ZB"
     	while (x>=1000 && length(s)>1)
         	{x/=1000; s=substr(s,5)}
@@ -31,7 +32,8 @@ humandecimal () {
     	xf=(s==" B  ")?"%5d   ":"%8.2f"
     	return sprintf( xf"%s\n", x, s)
     }
-	{gsub(/^[0-9]+/, human($1)); print}' | xargs
+	{gsub(/^[0-9]+/, human($1)); print}' | xargs)
+	[[ "$DECSIZE" != *" B" ]] && echo "$DECSIZE"
 }
 
 for FILEPATH in "$@"
@@ -39,7 +41,9 @@ do
 
 tabs 30
 
-echo "*** BEGIN FILE REPORT ***"
+echo -e "************************************************"
+echo -e "****************************\tmacOS File Report *"
+echo -e "************************************************"
 SEDPATH=$(echo "$FILEPATH" | /usr/bin/awk '{gsub("/","\\/");print}')
 
 # stat first
@@ -57,7 +61,7 @@ FPDF=$(/bin/df "$FILEPATH" | tail -1)
 FSYSTEM=$(echo "$FPDF" | /usr/bin/awk '{print $1}')
 echo -e "Filesystem:\t$FSYSTEM"
 
-MPOINT=$(echo "$FPDF" | /usr/bin/awk '{print $9}')
+MPOINT=$(echo "$FPDF" | /usr/bin/awk '{ for(i=9; i<=NF; i++) printf "%s",$i (i==NF?ORS:OFS) }')
 echo -e "Mount Point:\t$MPOINT"
 
 VOL_NAME=$(/usr/sbin/diskutil info "$FSYSTEM" | /usr/bin/awk -F":" '/Volume Name/{print $2}' | xargs)
@@ -94,10 +98,19 @@ LISTING=$(ls -aldO "$FILEPATH")
 [[ $(echo "$LISTING" | /usr/bin/grep "^w") != "" ]] && FTYPEX="Whiteout"
 echo -e "File Type:\t$FTYPEX"
 
-# symlink target
 if [[ "$FTYPEX" == "Symbolic Link" ]] ; then
-	SLTARGET="-> $(/usr/bin/stat -f '%Y' "$FILEPATH")"
-	echo -e "Reference:\t$SLTARGET"
+	cd "$DIRNAME"
+	SYMTARGET="$BASENAME"
+	while [ -L "$SYMTARGET" ]
+	do
+		SYMTARGET=$(/usr/bin/readlink "$SYMTARGET")
+		cd "$(/usr/bin/dirname "$SYMTARGET")"
+		SYMTARGET="$(/usr/bin/basename "$SYMTARGET")"
+	done
+	ABSDIR=$(pwd -P)
+	ABSPATH="$ABSDIR/$SYMTARGET"
+	echo -e "Reference:\t$ABSPATH"
+	cd /
 fi
 
 # sticky bit
@@ -150,6 +163,20 @@ if [[ "$KIND" == "" ]] || [[ "$KIND" == "(null)" ]] ; then
 	KIND="n/a"
 fi
 echo -e "Kind:\t$KIND"
+if [[ "$KIND" == "Alias" ]] ; then
+	if [[ $(/bin/ps axo pid,command | /usr/bin/grep -iw "[F]inder") != "" ]] ; then
+		ATARGET=$(/usr/bin/osascript 2>/dev/null << EOF
+tell application "Finder"
+	set thePath to (POSIX file "$FILEPATH") as alias
+	set theOriginal to (POSIX path of ((original item of thePath) as text))
+end tell
+theOriginal
+EOF)
+		if [[ "$ATARGET" != "" ]] ; then
+			echo -e "Original:\t$ATARGET"
+		fi
+	fi
+fi
 
 # Finder: type
 TYPECODE=$(echo "$MDLS" | /usr/bin/awk -F"= " '/kMDItemFSTypeCode/{print $2}' | /usr/bin/sed 's/^"\(.*\)"$/\1/')
@@ -179,12 +206,23 @@ if [[ "$FCOMMENT" == "(null)" ]] || [[ "$FCOMMENT" == "" ]] ; then
 fi
 echo -e "Finder Comment:\t$FCOMMENT"
 
-# extension hidden in Finder?
-HIDDENEXT=$(echo "$MDLS" | /usr/bin/awk -F"= " '/kMDItemFSIsExtensionHidden/{print $2}')
-if [[ "$HIDDENEXT" == "1" ]] ; then
-	HIDDENEXT="TRUE"
+# Finder flags
+FINDERFLAGS=$(echo "$MDLS" | /usr/bin/awk -F"= " '/kMDItemFSFinderFlags/{print $2}')
+if [[ "$FINDERFLAGS" == "(null)" ]] || [[ "$FINDERFLAGS" == "" ]] ; then
+	FINDERFLAGS="n/a"
+fi
+echo -e "Finder Flags:\t$FINDERFLAGS"
+
+# extension hidden in Finder
+if [[ "$SL_STATUS" == "enabled" ]] ; then
+	HIDDENEXT=$(echo "$MDLS" | /usr/bin/awk -F"= " '/kMDItemFSIsExtensionHidden/{print $2}')
+	if [[ "$HIDDENEXT" == "1" ]] ; then
+		HIDDENEXT="TRUE"
+	else
+		HIDDENEXT="FALSE"
+	fi
 else
-	HIDDENEXT="FALSE"
+	HIDDENEXT="n/a"
 fi
 echo -e "Hidden Extension:\t$HIDDENEXT"
 
@@ -207,7 +245,11 @@ DU_SIZE=$(echo "$DISK_USAGE * 1024" | /usr/bin/bc -l)
 DU_SIZE_MB=$(humandecimal "$DU_SIZE")
 DU_SIZE_MIB=$(humanbinary "$DU_SIZE")
 DU_SIZE_T=$(echo "$DU_SIZE" | /usr/bin/awk '{printf("%'"'"'d\n",$1);}')
-DU_SIZE_INFO="$DU_SIZE_T B ($DU_SIZE_MB, $DU_SIZE_MIB)"
+if [[ "$DU_SIZE_MB" == "" ]] && [[ "$DU_SIZE_MIB" == "" ]] ; then
+	DU_SIZE_INFO="$DU_SIZE_T B"
+else
+	DU_SIZE_INFO="$DU_SIZE_T B ($DU_SIZE_MB, $DU_SIZE_MIB)"
+fi
 echo -e "Disk Usage:\t$DU_SIZE_INFO"
 
 # physical size as reported by macOS (mdls) -- might be larger than actual disk usage (virtual size ignoring HFS+ compression)
@@ -220,7 +262,11 @@ else
 	PHYSICAL_SIZE_MB=$(humandecimal "$PHYSICAL_SIZE")
 	PHYSICAL_SIZE_MIB=$(humanbinary "$PHYSICAL_SIZE")
 	PHYSICAL_SIZE_T=$(echo "$PHYSICAL_SIZE" | /usr/bin/awk '{printf("%'"'"'d\n",$1);}')
-	PHYSICAL_SIZE_INFO="$PHYSICAL_SIZE_T B ($PHYSICAL_SIZE_MB, $PHYSICAL_SIZE_MIB)"
+	if [[ "$PHYSICAL_SIZE_MB" == "" ]] && [[ "$PHYSICAL_SIZE_MIB" == "" ]] ; then
+		PHYSICAL_SIZE_INFO="$PHYSICAL_SIZE_T B"
+	else
+		PHYSICAL_SIZE_INFO="$PHYSICAL_SIZE_T B ($PHYSICAL_SIZE_MB, $PHYSICAL_SIZE_MIB)"
+	fi
 fi
 echo -e "Physical Size:\t$PHYSICAL_SIZE_INFO"
 
@@ -233,7 +279,11 @@ else
 	LOGICAL_SIZE_MB=$(humandecimal "$LOGICAL_SIZE")
 	LOGICAL_SIZE_MIB=$(humanbinary "$LOGICAL_SIZE")
 	LOGICAL_SIZE_T=$(echo "$LOGICAL_SIZE" | /usr/bin/awk '{printf("%'"'"'d\n",$1);}')
-	LOGICAL_SIZE_INFO="$LOGICAL_SIZE_T B ($LOGICAL_SIZE_MB, $LOGICAL_SIZE_MIB)"
+	if [[ "$LOGICAL_SIZE_MB" == "" ]] && [[ "$LOGICAL_SIZE_MIB" == "" ]] ; then
+		LOGICAL_SIZE_INFO="$LOGICAL_SIZE_T B"
+	else
+		LOGICAL_SIZE_INFO="$LOGICAL_SIZE_T B ($LOGICAL_SIZE_MB, $LOGICAL_SIZE_MIB)"
+	fi
 fi
 echo -e "Logical Size:\t$LOGICAL_SIZE_INFO"
 
@@ -245,7 +295,11 @@ else
 	FS_SIZE_MB=$(humandecimal "$FS_SIZE")
 	FS_SIZE_MIB=$(humanbinary "$FS_SIZE")
 	FS_SIZE_T=$(echo "$FS_SIZE" | /usr/bin/awk '{printf("%'"'"'d\n",$1);}')
-	FS_SIZE_INFO="$FS_SIZE_T B ($FS_SIZE_MB, $FS_SIZE_MIB)"
+	if [[ "$FS_SIZE_MB" == "" ]] && [[ "$FS_SIZE_MIB" == "" ]] ; then
+		FS_SIZE_INFO="$FS_SIZE_T B"
+	else
+		FS_SIZE_INFO="$FS_SIZE_T B ($FS_SIZE_MB, $FS_SIZE_MIB)"
+	fi
 fi
 echo -e "File System Size:\t$FS_SIZE_INFO"
 
@@ -258,8 +312,12 @@ DATA_SIZE=$(echo "$SIZE_LIST" | /usr/bin/grep -v '^d' | /usr/bin/awk '{total += 
 DATA_SIZE_MB=$(humandecimal "$DATA_SIZE")
 DATA_SIZE_MIB=$(humanbinary "$DATA_SIZE")
 DATA_SIZE_T=$(echo "$DATA_SIZE" | /usr/bin/awk '{printf("%'"'"'d\n",$1);}')
-DATA_SIZE_INFO="$DATA_SIZE_T B ($DATA_SIZE_MB, $DATA_SIZE_MIB)"
-echo -e "Data Size:\t$DATA_SIZE_INFO" # only the readable data parts of the total byte count
+if [[ "$DATA_SIZE_MB" == "" ]] && [[ "$DATA_SIZE_MIB" == "" ]] ; then
+	DATA_SIZE_INFO="$DATA_SIZE_T B"
+else
+	DATA_SIZE_INFO="$DATA_SIZE_T B ($DATA_SIZE_MB, $DATA_SIZE_MIB)"
+fi
+echo -e "Data Size:\t$DATA_SIZE_INFO"
 
 # Resource fork size
 EXTRA_LIST=$(echo "$TOTAL_LIST" | /usr/bin/awk 'NF<=2' | /usr/bin/sed -e '/^total /d' -e '/^'"$SEDPATH"'/d')
@@ -268,19 +326,27 @@ if [[ "$RES_SIZE" != "" ]] && [[ "$RES_SIZE" != "0" ]]; then
 	RES_SIZE_MB=$(humandecimal "$RES_SIZE")
 	RES_SIZE_MIB=$(humanbinary "$RES_SIZE")
 	RES_SIZE_T=$(echo "$RES_SIZE" | /usr/bin/awk '{printf("%'"'"'d\n",$1);}')
-	RES_SIZE_INFO="$RES_SIZE_T B ($RES_SIZE_MB, $RES_SIZE_MIB)"
+	if [[ "$RES_SIZE_MB" == "" ]] && [[ "$RES_SIZE_MIB" == "" ]] ; then
+		RES_SIZE_INFO="$RES_SIZE_T B"
+	else
+		RES_SIZE_INFO="$RES_SIZE_T B ($RES_SIZE_MB, $RES_SIZE_MIB)"
+	fi
 else
 	RES_SIZE="0"
 	RES_SIZE_INFO="0 B"
 fi
-echo -e "Resource Forks:\t$RES_SIZE_INFO" # only the resource fork parts of the total byte count
+echo -e "Resource Forks:\t$RES_SIZE_INFO"
 
 # apparent size (stat total + resource forks)
 APPARENT_SIZE=$(echo "$RES_SIZE + $DATA_SIZE" | /usr/bin/bc -l)
 APPARENT_SIZE_MB=$(humandecimal "$APPARENT_SIZE")
 APPARENT_SIZE_MIB=$(humanbinary "$APPARENT_SIZE")
 APPARENT_SIZE_T=$(echo "$APPARENT_SIZE" | /usr/bin/awk '{printf("%'"'"'d\n",$1);}')
-APPARENT_SIZE_INFO="$APPARENT_SIZE_T B ($APPARENT_SIZE_MB, $APPARENT_SIZE_MIB)"
+if [[ "$APPARENT_SIZE_MB" == "" ]] && [[ "$APPARENT_SIZE_MIB" == "" ]] ; then
+	APPARENT_SIZE_INFO="$APPARENT_SIZE_T B"
+else
+	APPARENT_SIZE_INFO="$APPARENT_SIZE_T B ($APPARENT_SIZE_MB, $APPARENT_SIZE_MIB)"
+fi
 echo -e "Apparent Data Size:\t$APPARENT_SIZE_INFO"
 
 # Xattr size
@@ -289,7 +355,11 @@ if [[ "$XATTR_SIZE" != "" ]] && [[ "$XATTR_SIZE" != "0" ]] ; then
 	XATTR_SIZE_MB=$(humandecimal "$XATTR_SIZE")
 	XATTR_SIZE_MIB=$(humanbinary "$XATTR_SIZE")
 	XATTR_SIZE_T=$(echo "$XATTR_SIZE" | /usr/bin/awk '{printf("%'"'"'d\n",$1);}')
-	XATTR_SIZE_INFO="$XATTR_SIZE_T B ($XATTR_SIZE_MB, $XATTR_SIZE_MIB)"
+	if [[ "$XATTR_SIZE_MB" == "" ]] && [[ "$XATTR_SIZE_MIB" == "" ]] ; then
+		XATTR_SIZE_INFO="$XATTR_SIZE_T B"
+	else
+		XATTR_SIZE_INFO="$XATTR_SIZE_T B ($XATTR_SIZE_MB, $XATTR_SIZE_MIB)"
+	fi
 else
 	XATTR_SIZE="0"
 	XATTR_SIZE_INFO="0 B"
@@ -301,7 +371,11 @@ TOTAL_SIZE=$(echo "$APPARENT_SIZE + $XATTR_SIZE" | /usr/bin/bc -l)
 TOTAL_SIZE_MB=$(humandecimal "$TOTAL_SIZE")
 TOTAL_SIZE_MIB=$(humanbinary "$TOTAL_SIZE")
 TOTAL_SIZE_T=$(echo "$TOTAL_SIZE" | /usr/bin/awk '{printf("%'"'"'d\n",$1);}')
-TOTAL_SIZE_INFO="$TOTAL_SIZE_T B ($TOTAL_SIZE_MB, $TOTAL_SIZE_MIB)"
+if [[ "$TOTAL_SIZE_MB" == "" ]] && [[ "$TOTAL_SIZE_MIB" == "" ]] ; then
+	TOTAL_SIZE_INFO="$TOTAL_SIZE_T B"
+else
+	TOTAL_SIZE_INFO="$TOTAL_SIZE_T B ($TOTAL_SIZE_MB, $TOTAL_SIZE_MIB)"
+fi
 echo -e "Total Data Size:\t$TOTAL_SIZE_INFO"
 
 # root size
@@ -309,7 +383,11 @@ if [[ "$FTYPEX" == "Directory" ]] ; then
 	STATSIZE_B=$(echo "$STAT" | /usr/bin/awk '{print $8}')
 	STATSIZE_MB=$(humandecimal "$STATSIZE_B")
 	STATSIZE_MIB=$(humanbinary "$STATSIZE_B")
-	STATSIZE="$STATSIZE_B B ($STATSIZE_MB, $STATSIZE_MIB)"
+	if [[ "$STATSIZE_MB" == "" ]] && [[ "$STATSIZE_MIB" == "" ]] ; then
+		STATSIZE="$STATSIZE_B B"
+	else
+		STATSIZE="$STATSIZE_B B ($STATSIZE_MB, $STATSIZE_MIB)"
+	fi
 	echo -e "Root Object Data Size:\t$STATSIZE"
 
 	ROOT_LIST=$(ls -laO@ "$FILEPATH" | /usr/bin/tail -n +3)
@@ -327,7 +405,11 @@ if [[ "$FTYPEX" == "Directory" ]] ; then
 	if [[ "$XTRASIZE" != "0" ]] ; then
 		XTRASIZE_MB=$(humandecimal "$XTRASIZE")
 		XTRASIZE_MIB=$(humanbinary "$XTRASIZE")
-		XTRASIZE_INFO="$XTRASIZE B ($XTRASIZE_MB, $XTRASIZE_MIB)"
+		if [[ "$XTRASIZE_MB" == "" ]] && [[ "$XTRASIZE_MIB" == "" ]] ; then
+			XTRASIZE_INFO="$XTRASIZE B"
+		else
+			XTRASIZE_INFO="$XTRASIZE B ($XTRASIZE_MB, $XTRASIZE_MIB)"
+		fi
 	else
 		XTRASIZE_INFO="0 B"
 	fi
@@ -336,7 +418,11 @@ if [[ "$FTYPEX" == "Directory" ]] ; then
 	ROOT_TOTAL=$(echo "$STATSIZE_B + $XTRASIZE" | /usr/bin/bc -l)
 	ROOT_TOTAL_MB=$(humandecimal "$ROOT_TOTAL")
 	ROOT_TOTAL_MIB=$(humanbinary "$ROOT_TOTAL")
-	ROOT_TSIZE="$ROOT_TOTAL B ($ROOT_TOTAL_MB, $ROOT_TOTAL_MIB)"
+	if [[ "$ROOT_TOTAL_MB" == "" ]] && [[ "$ROOT_TOTAL_MIB" == "" ]] ; then
+		ROOT_TSIZE="$ROOT_TOTAL B"
+	else
+		ROOT_TSIZE="$ROOT_TOTAL B ($ROOT_TOTAL_MB, $ROOT_TOTAL_MIB)"
+	fi
 	echo -e "Root Object Total Size:\t$ROOT_TSIZE"
 fi
 
@@ -487,68 +573,74 @@ echo -e "Sandboxed:\t$SANDBOX_STATUS"
 
 # Codesigning info
 EXEC_PATH_RAW=$(/usr/bin/codesign -d "$FILEPATH" 2>&1)
-if [[ $(echo "$EXEC_PATH_RAW" | /usr/bin/grep "not signed at all") != "" ]] ; then
-	CODESIGN_STATUS="FALSE" ; CODESIGN="n/a" ; CA_CERT="n/a" ; ICA="n/a" ; LEAF="n/a" ; SIGNED="n/a" ; TEAM_ID="n/a"
-elif [[ $(echo "$EXEC_PATH_RAW" | /usr/bin/grep "bundle format unrecognized, invalid, or unsuitable") != "" ]] ; then
-	CODESIGN_STATUS="FALSE" ; CODESIGN="n/a" ; CA_CERT="n/a" ; ICA="n/a" ; LEAF="n/a" ; SIGNED="n/a" ; TEAM_ID="n/a"
-else
-	EXEC_PATH=$(echo "$EXEC_PATH_RAW" | /usr/bin/awk -F"=" '{print $2}' | /usr/bin/head -1)
-	CS_ALL=$(/usr/bin/codesign -dvvvv "$EXEC_PATH" 2>&1)
-	if [[ $(echo "$CS_ALL" | /usr/bin/grep "Signature=adhoc") != "" ]] ; then
-		CODESIGN_STATUS="TRUE"
-		CODESIGN="adhoc signature"
-		CA_CERT="n/a"
-		ICA="n/a"
-		LEAF="n/a"
-		SIGNED="n/a"
-		TEAM_ID=$(echo "$CS_ALL" | /usr/bin/awk -F"=" '/TeamIdentifier/{print $2}')
+if [[ $(echo "$EXEC_PATH_RAW" | /usr/bin/grep "not signed") == "" ]] ; then
+	if [[ $(echo "$EXEC_PATH_RAW" | /usr/bin/grep "not signed at all") != "" ]] ; then
+		CODESIGN_STATUS="FALSE" ; CODESIGN="n/a" ; CA_CERT="n/a" ; ICA="n/a" ; LEAF="n/a" ; SIGNED="n/a" ; TEAM_ID="n/a"
+	elif [[ $(echo "$EXEC_PATH_RAW" | /usr/bin/grep "bundle format unrecognized, invalid, or unsuitable") != "" ]] ; then
+		CODESIGN_STATUS="FALSE" ; CODESIGN="n/a" ; CA_CERT="n/a" ; ICA="n/a" ; LEAF="n/a" ; SIGNED="n/a" ; TEAM_ID="n/a"
 	else
-		SIGNED=$(echo "$CS_ALL" | /usr/bin/awk -F"=" '/Timestamp/{print $2}' | /usr/bin/awk '{print $2 " " $1 " " $4 " " $3}')
-		[[ "$SIGNED" == "" ]] && SIGNED="n/a"
-		TEAM_ID=$(echo "$CS_ALL" | /usr/bin/awk -F"=" '/TeamIdentifier/{print $2}')
-		[[ "$TEAM_ID" == "" ]] && TEAM_ID="n/a"
-		CS_CERTS=$(echo "$CS_ALL" | /usr/bin/grep "Authority")
-		CS_COUNT=$(echo "$CS_CERTS" | /usr/bin/wc -l | xargs)
-		if [[ "$CS_COUNT" -gt 1 ]] ; then
-			CA_CERT=$(echo "$CS_CERTS" | /usr/bin/tail -1 | /usr/bin/awk -F= '{print $2}')
-			if [[ "$CS_COUNT" == "2" ]] ; then
-				LEAF=$(echo "$CS_CERTS" | /usr/bin/head -1 | /usr/bin/awk -F= '{print $2}')
-				ICA="n/a"
-			elif [[ "$CS_COUNT" == "3" ]] ; then
-				LEAF=$(echo "$CS_CERTS" | /usr/bin/head -1 | /usr/bin/awk -F= '{print $2}')
-				ICA=$(echo "$CS_CERTS" | /usr/bin/head -2 | /usr/bin/tail -1 | /usr/bin/awk -F= '{print $2}')
-			else
-				LEAF=$(echo "$CS_CERTS" | /usr/bin/head -1 | /usr/bin/awk -F= '{print $2}')
-				ICA=$(echo "$CS_CERTS" | /usr/bin/head -2 | /usr/bin/tail -1 | /usr/bin/awk -F= '{print $2}')
-				ICA="$ICA (issuer)"
-			fi
-			if [[ "$CA_CERT" == "Apple Root CA" ]] ; then
-				CODESIGN_STATUS="TRUE"
-				CODESIGN="valid certificate"
-			else
-				CODESIGN_STATUS="TRUE"
-				CODESIGN="invalid certificate (issued)"
-			fi
-		elif [[ "$CS_COUNT" == "1" ]] ; then
-			LEAF=$(echo "$CS_CERTS" | /usr/bin/head -1 | /usr/bin/awk -F= '{print $2}')
+		EXEC_PATH=$(echo "$EXEC_PATH_RAW" | /usr/bin/awk -F"=" '{print $2}' | /usr/bin/head -1)
+		CS_ALL=$(/usr/bin/codesign -dvvvv "$EXEC_PATH" 2>&1)
+		if [[ $(echo "$CS_ALL" | /usr/bin/grep "Signature=adhoc") != "" ]] ; then
 			CODESIGN_STATUS="TRUE"
-			CODESIGN="invalid certificate (self-signed)"
+			CODESIGN="adhoc signature"
+			CA_CERT="n/a"
+			ICA="n/a"
+			LEAF="n/a"
+			SIGNED="n/a"
+			TEAM_ID=$(echo "$CS_ALL" | /usr/bin/awk -F"=" '/TeamIdentifier/{print $2}')
 		else
-			CODESIGN_STATUS="TRUE"
-			CODESIGN="internal error"
-			CA_CERT="internal error"
-			ICA="internal error"
-			LEAF="internal error"
+			SIGNED=$(echo "$CS_ALL" | /usr/bin/awk -F"=" '/Timestamp/{print $2}' | /usr/bin/awk '{print $2 " " $1 " " $4 " " $3}')
+			[[ "$SIGNED" == "" ]] && SIGNED="n/a"
+			TEAM_ID=$(echo "$CS_ALL" | /usr/bin/awk -F"=" '/TeamIdentifier/{print $2}')
+			[[ "$TEAM_ID" == "" ]] && TEAM_ID="n/a"
+			CS_CERTS=$(echo "$CS_ALL" | /usr/bin/grep "Authority")
+			CS_COUNT=$(echo "$CS_CERTS" | /usr/bin/wc -l | xargs)
+			if [[ "$CS_COUNT" -gt 1 ]] ; then
+				CA_CERT=$(echo "$CS_CERTS" | /usr/bin/tail -1 | /usr/bin/awk -F= '{print $2}')
+				if [[ "$CS_COUNT" == "2" ]] ; then
+					LEAF=$(echo "$CS_CERTS" | /usr/bin/head -1 | /usr/bin/awk -F= '{print $2}')
+					ICA="none"
+				elif [[ "$CS_COUNT" == "3" ]] ; then
+					LEAF=$(echo "$CS_CERTS" | /usr/bin/head -1 | /usr/bin/awk -F= '{print $2}')
+					ICA=$(echo "$CS_CERTS" | /usr/bin/head -2 | /usr/bin/tail -1 | /usr/bin/awk -F= '{print $2}')
+				else
+					LEAF=$(echo "$CS_CERTS" | /usr/bin/head -1 | /usr/bin/awk -F= '{print $2}')
+					ICA=$(echo "$CS_CERTS" | /usr/bin/head -2 | /usr/bin/tail -1 | /usr/bin/awk -F= '{print $2}')
+					ICA="$ICA (issuer)"
+				fi
+				if [[ "$CA_CERT" == "Apple Root CA" ]] ; then
+					CODESIGN_STATUS="TRUE"
+					CODESIGN="valid certificate"
+				else
+					CODESIGN_STATUS="TRUE"
+					CODESIGN="invalid certificate (issued)"
+				fi
+			elif [[ "$CS_COUNT" == "1" ]] ; then
+				LEAF=$(echo "$CS_CERTS" | /usr/bin/head -1 | /usr/bin/awk -F= '{print $2}')
+				CODESIGN_STATUS="TRUE"
+				CODESIGN="invalid certificate (self-signed)"
+				CA_CERT="none"
+				ICA="none"
+			else
+				CODESIGN_STATUS="TRUE"
+				CODESIGN="internal error"
+				CA_CERT="internal error"
+				ICA="internal error"
+				LEAF="internal error"
+			fi
 		fi
 	fi
+	echo -e "Code Signature:\t$CODESIGN_STATUS"
+	echo -e "Code Signing:\t$CODESIGN"
+	echo -e "Certificate Authority:\t$CA_CERT"
+	echo -e "Intermediate CA:\t$ICA"
+	echo -e "Leaf Certificate:\t$LEAF"
+	echo -e "Team Identifier:\t$TEAM_ID"
+	echo -e "Signed:\t$SIGNED"
+else
+	echo -e "Code Signature\tFALSE"
 fi
-echo -e "Code Signature:\t$CODESIGN_STATUS"
-echo -e "Code Signing:\t$CODESIGN"
-echo -e "Certificate Authority:\t$CA_CERT"
-echo -e "Intermediate CA:\t$ICA"
-echo -e "Leaf Certificate:\t$LEAF"
-echo -e "Team Identifier:\t$TEAM_ID"
-echo -e "Signed:\t$SIGNED"
 
 # Gatekeeper
 if [[ "$SPCTL_STATUS" == "context" ]] ; then
@@ -674,7 +766,7 @@ if [[ "$FTYPEX" == "Directory" ]] ; then
 
 		RES_NUMBER=$(echo "$TOTAL_LIST" | /usr/bin/grep "com.apple.ResourceFork" | /usr/bin/wc -l | xargs)
 
-		ITEM_COUNT=$(echo "$FULL_LIST" | /usr/bin/wc -l | xargs) # total item count
+		ITEM_COUNT=$(echo "$FULL_LIST" | /usr/bin/wc -l | xargs)
 		ITEM_FULL=$(echo "$ITEM_COUNT + $RES_NUMBER" | /usr/bin/bc -l)
 		echo -e "Contains:\t$ITEM_FULL items"
 
@@ -685,31 +777,25 @@ if [[ "$FTYPEX" == "Directory" ]] ; then
 		### HFS+ cloaked files >>> HOW?
 		### HFS+ special file system files (locations, private data) >>> HOW?
 
-		echo -e "Resource Forks:\t$RES_NUMBER"
+		[[ "$RES_NUMBER" != "0" ]] && echo -e "Resource Forks:\t$RES_NUMBER"
+
+		INV_LIST=$(echo "$FULL_LIST" | /usr/bin/awk '{print $10}')
+		INV_CONTAIN=$(echo "$INV_LIST" | /usr/bin/grep "^\." | /usr/bin/wc -l | xargs)
+		[[ "$INV_CONTAIN" != "0" ]] && echo -e "Invisible:\t$INV_CONTAIN"
+
+		DSSTORE_CONTAIN=$(echo "$INV_LIST" | /usr/bin/grep "^\.DS_Store" | /usr/bin/wc -l | xargs)
+		[[ "$DSSTORE_CONTAIN" != "0" ]] && echo -e ".DS_Store:\t$DSSTORE_CONTAIN"
+
+		LOCAL_CONTAIN=$(echo "$INV_LIST" | /usr/bin/grep "^\.localized" | /usr/bin/wc -l | xargs)
+		[[ "$LOCAL_CONTAIN" != "0" ]] && echo -e ".localized:\t$LOCAL_CONTAIN"
+
+		OTHER_INV=$(echo "$INV_CONTAIN - $DSSTORE_CONTAIN - $LOCAL_CONTAIN" | /usr/bin/bc -l)
+		[[ "$OTHER_INV" == "" ]] && OTHER_INV="0"
+		[[ "$OTHER_INV" != "0" ]] && echo -e "Invisible (other):\t$OTHER_INV"
 
 		CHFLAGS_ALL=$(echo "$FULL_LIST" | /usr/bin/awk '{print $5}')
 		FLAGS_COUNT=$(echo "$CHFLAGS_ALL" | /usr/bin/grep -v "-" | /usr/bin/awk '{gsub(","," ");print}'| /usr/bin/awk '{for(w=1;w<=NF;w++) print $w}' | /usr/bin/sort | /usr/bin/uniq -c | /usr/bin/sort -nr | /usr/bin/awk '{print $2 ":\t" $1}')
 		[[ "$FLAGS_COUNT" != "" ]] && echo -e "$FLAGS_COUNT"
-
-		INV_LIST=$(echo "$FULL_LIST" | /usr/bin/awk '{print $10}')
-		INV_CONTAIN=$(echo "$INV_LIST" | /usr/bin/grep "^\." | /usr/bin/wc -l | xargs)
-		# $(find "$FILEPATH" \( -iname ".*" \) | /usr/bin/wc -l | xargs)
-		# [[ "$INV_CONTAIN" == "" ]] && INV_CONTAIN="0"
-		echo -e "Invisible:\t$INV_CONTAIN"
-
-		DSSTORE_CONTAIN=$(echo "$INV_LIST" | /usr/bin/grep "^\.DS_Store" | /usr/bin/wc -l | xargs)
-		# $(find "$FILEPATH" \( -iname ".DS_Store" \) | /usr/bin/wc -l | xargs)
-		# [[ "$DSSTORE_CONTAIN" == "" ]] && DSSTORE_CONTAIN="0"
-		echo -e ".DS_Store:\t$DSSTORE_CONTAIN"
-
-		LOCAL_CONTAIN=$(echo "$INV_LIST" | /usr/bin/grep "^\.localized" | /usr/bin/wc -l | xargs)
-		# $(find "$FILEPATH" \( -iname ".localized" \) | /usr/bin/wc -l | xargs)
-		# [[ "$LOCAL_CONTAIN" == "" ]] && LOCAL_CONTAIN="0"
-		echo -e ".localized:\t$LOCAL_CONTAIN"
-
-		OTHER_INV=$(echo "$INV_CONTAIN - $DSSTORE_CONTAIN - $LOCAL_CONTAIN" | /usr/bin/bc -l)
-		[[ "$OTHER_INV" == "" ]] && OTHER_INV="0"
-		echo -e "Invisible (other):\t$OTHER_INV"
 
 	else
 		echo -e "Contains:\t0 items"
