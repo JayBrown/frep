@@ -327,12 +327,15 @@ else
 		PHYSICAL_SIZE_INFO="$PHYSICAL_SIZE_T B ($PHYSICAL_SIZE_MB, $PHYSICAL_SIZE_MIB)"
 	fi
 fi
+
+# compression ratio
 if [[ "$PHYS" == "true" ]] ; then
 	if [[ "$PHYSICAL_SIZE" -gt "$DU_SIZE" ]] ; then
 		COMPRESSED="true"
 		echo -e "Virtual Size:\t$PHYSICAL_SIZE_INFO"
 		CRATIO=$(echo "$PHYSICAL_SIZE / $DU_SIZE" | /usr/bin/bc -l)
 		CPERCENT=$(echo "100 / $CRATIO" | /usr/bin/bc -l)
+		CPERCENT=$(echo "100 - $CPERCENT" | /usr/bin/bc -l)
 		CPERCENT=$(round "$CPERCENT" 2)
 		echo -e "HFS+ Compression Ratio:\t$CPERCENT %"
 	else
