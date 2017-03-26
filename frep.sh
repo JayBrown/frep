@@ -1,19 +1,13 @@
 #!/bin/bash
 
-# frep v0.9.6 beta
+# frep v0.9.7 beta
 # macOS File Reporter
 
-LANG=en_US.UTF-8
-
-RED=$(tput setaf 1)
-GREEN=$(tput setaf 2)
-YELLOW=$(tput setaf 3)
-BLUE=$(tput setaf 4)
-PURPLE=$(tput setaf 5)
-DBLUE=$(tput setaf 27)
+STANDOUT=$(tput smso)
 BOLD=$(tput bold)
-NOCOL=$(tput sgr0)
+RESET=$(tput sgr0)
 
+LANG=en_US.UTF-8
 ACCOUNT=$(id -un)
 
 # set -x
@@ -57,37 +51,37 @@ do
 
 # check if exists
 if [[ ! -e "$FILEPATH" ]] ; then
-	echo "${RED}Error!${NOCOL} $FILEPATH does not exist!"
+	echo "Error! $FILEPATH does not exist!"
 	continue
 fi
 
 # check if readable
 if [[ "$ACCOUNT" != "root" ]] ; then
 	if [[ ! -r "$FILEPATH" ]] ; then
-		echo "${RED}Error!${NOCOL} Target is not readable."
-		echo "Please run the script again as root using ${GREEN}sudo frep${NOCOL}"
+		echo "Error! Target is not readable."
+		echo "Please run the script again as root using 'sudo frep'"
 		continue
 	fi
 	if [[ -d "$FILEPATH" ]] ; then
-		echo "Running preliminary read permissions check. ${YELLOW}Please wait...${NOCOL}"
+		echo "Running preliminary read permissions check. Please wait..."
 		cd "$FILEPATH"
 		NRCONTENT=$(find . ! -user "$ACCOUNT" -exec [ ! -r {} ] \; -print -quit)
 		cd /
 		if [[ "$NRCONTENT" != "" ]] ; then
-			echo "${RED}Error!${NOCOL} At least one item is not readable."
-			echo "Please run the script again as root using ${GREEN}sudo frep${NOCOL}"
+			echo "Error! At least one item is not readable."
+			echo "Please run the script again as root using 'sudo frep'"
 			continue
 		else
 			echo ""
 		fi
 	fi
+else
+	echo ""
 fi
 
-tabs 30
+tabs 31
 
-echo -e "${DBLUE}************************************************"
-echo -e "****************************\t${BLUE}macOS File Report ${DBLUE}*"
-echo -e "************************************************${NOCOL}"
+echo -e "${STANDOUT}                              ${BOLD}macOS File Report        ${RESET}"
 
 SEDPATH=$(echo "$FILEPATH" | /usr/bin/awk '{gsub("/","\\/");print}')
 
@@ -96,16 +90,16 @@ STAT=$(/usr/bin/stat "$FILEPATH")
 STATS=$(/usr/bin/stat -s "$FILEPATH")
 
 echo ""
-echo -e "${PURPLE}${BOLD}Basic Information${NOCOL}"
+echo -e "\t${STANDOUT}General Information      ${RESET}"
 
 # file & volume info
 BASENAME=$(/usr/bin/basename "$FILEPATH")
-echo -e "Basename:\t$BASENAME"
+echo -e "Basename:${RESET}\t$BASENAME"
 
 DIRNAME=$(/usr/bin/dirname "$FILEPATH")
 echo -e "Path:\t$DIRNAME"
 
-FPDF=$(/bin/df "$FILEPATH" | tail -1)
+FPDF=$(/bin/df "$FILEPATH" | /usr/bin/tail -1)
 FSYSTEM=$(echo "$FPDF" | /usr/bin/awk '{print $1}')
 echo -e "Filesystem:\t$FSYSTEM"
 
@@ -123,7 +117,7 @@ BLOCKSIZE=$(echo "$STATS" | /usr/bin/awk '{print $13}' | /usr/bin/awk -F= '{prin
 echo -e "Allocation Block Size:\t$BLOCKSIZE B"
 
 echo ""
-echo -e "${PURPLE}${BOLD}Unix File Information${NOCOL}"
+echo -e "\t${STANDOUT}Unix File Information    ${RESET}"
 
 # file type (Unix)
 LISTING=$(ls -dlAO "$FILEPATH")
@@ -190,10 +184,10 @@ echo -e "System/User Flags:\t$USERFLAGS"
 
 CHFLAGS=$(echo "$LISTING" | /usr/bin/awk '{print $5}' | /usr/bin/awk '{gsub(","," ");print}')
 ROOTFLAGS=$(echo "$CHFLAGS" | /usr/bin/awk '{for(w=1;w<=NF;w++) print $w}' | /usr/bin/sort | /usr/bin/uniq -c | /usr/bin/sort -nr | /usr/bin/awk '{gsub("-","none");print $2}' | xargs)
-echo -e "File Flags:\t$ROOTFLAGS"
+echo -e "Attributes:\t$ROOTFLAGS"
 
 echo ""
-echo -e "${PURPLE}${BOLD}Ownership & Permissions${NOCOL}"
+echo -e "\t${STANDOUT}Ownership & Permissions  ${RESET}"
 
 # Unix file flags
 
@@ -251,7 +245,7 @@ else
 fi
 
 echo ""
-echo -e "${PURPLE}${BOLD}File Sizes${NOCOL}"
+echo -e "\t${STANDOUT}File Sizes               ${RESET}"
 
 # root sizes
 if [[ "$FTYPEX" == "Directory" ]] ; then
@@ -264,7 +258,7 @@ if [[ "$FTYPEX" == "Directory" ]] ; then
 		STATSIZE="$STATSIZE_B B ($STATSIZE_MB, $STATSIZE_MIB)"
 	fi
 
-	echo -e "Root Object Data Size:\t$STATSIZE"
+	echo -e "Directory Size:\t$STATSIZE"
 
 	XTRASIZE=$(ls -dlAO@ "$FILEPATH" | /usr/bin/tail -n +2 | /usr/bin/awk '{total += $2} END {printf "%.0f", total}')
 	[[ "$XTRASIZE" == "" ]] && XTRASIZE="0"
@@ -280,7 +274,7 @@ if [[ "$FTYPEX" == "Directory" ]] ; then
 		XTRASIZE_INFO="0 B"
 	fi
 
-	echo -e "Root Object Xattr:\t$XTRASIZE_INFO"
+	echo -e "Directory Xattr:\t$XTRASIZE_INFO"
 
 	ROOT_TOTAL=$(echo "$STATSIZE_B + $XTRASIZE" | /usr/bin/bc -l)
 	ROOT_TOTAL_MB=$(humandecimal "$ROOT_TOTAL")
@@ -291,11 +285,30 @@ if [[ "$FTYPEX" == "Directory" ]] ; then
 		ROOT_TSIZE="$ROOT_TOTAL B ($ROOT_TOTAL_MB, $ROOT_TOTAL_MIB)"
 	fi
 
-	echo -e "Root Object Total Size:\t$ROOT_TSIZE"
+	echo -e "Directory Size on Disk:\t$ROOT_TSIZE"
 
 fi
 
-# actual disk usage size
+# total list
+TOTAL_LIST=$(ls -ReAlOs@ "$FILEPATH" | /usr/bin/sed -e '/^$/d' -e '/^'"$SEDPATH"'/d')
+SIZE_LIST=$(echo "$TOTAL_LIST" | /usr/bin/awk 'NF>=11 {print substr($0, index($0,$2))}')
+
+# size on disk calculated from ls/stat output
+BLOCKLIST=$(echo "$TOTAL_LIST" | /usr/bin/awk 'NF>=11' | /usr/bin/awk '{print $2,$1}')
+BLOCKSONDISK=$(echo "$BLOCKLIST" | /usr/bin/grep -v '^d' | /usr/bin/awk '{total += $2} END {printf "%.0f", total}')
+SIZEONDISK=$(echo "$BLOCKSONDISK * $CLUSTERSIZE" | /usr/bin/bc -l)
+[[ "$SIZEONDISK" == "" ]] && SIZEONDISK="0"
+SOD_MB=$(humandecimal "$SIZEONDISK")
+SOD_MIB=$(humanbinary "$SIZEONDISK")
+SOD_T=$(echo "$SIZEONDISK" | /usr/bin/awk '{printf("%'"'"'d\n",$1);}')
+if [[ "$SOD_MB" == "" ]] && [[ "$SOD_MIB" == "" ]] ; then
+	SOD_INFO="$SOD_T B"
+else
+	SOD_INFO="$SOD_T B ($SOD_MB, $SOD_MIB)"
+fi
+echo -e "Size On Disk [stat]:\t$SOD_INFO"
+
+# disk usage reported by HFS+ to du
 DISK_USAGE=$(/usr/bin/du -k -d 0 "$FILEPATH" | /usr/bin/head -n 1 | /usr/bin/awk '{print $1}')
 DU_SIZE=$(echo "$DISK_USAGE * 1024" | /usr/bin/bc -l)
 DU_SIZE_MB=$(humandecimal "$DU_SIZE")
@@ -306,7 +319,7 @@ if [[ "$DU_SIZE_MB" == "" ]] && [[ "$DU_SIZE_MIB" == "" ]] ; then
 else
 	DU_SIZE_INFO="$DU_SIZE_T B ($DU_SIZE_MB, $DU_SIZE_MIB)"
 fi
-echo -e "Disk Usage:\t$DU_SIZE_INFO"
+echo -e "Disk Usage [du]:\t$DU_SIZE_INFO"
 
 # MDLS
 MDLS=$(/usr/bin/mdls "$FILEPATH" 2>/dev/null)
@@ -330,22 +343,59 @@ fi
 
 # compression ratio
 if [[ "$PHYS" == "true" ]] ; then
-	if [[ "$PHYSICAL_SIZE" -gt "$DU_SIZE" ]] ; then
+	if [[ "$PHYSICAL_SIZE" -gt "$SIZEONDISK" ]] ; then
 		COMPRESSED="true"
-		echo -e "Virtual Size:\t$PHYSICAL_SIZE_INFO"
-		CRATIO=$(echo "$PHYSICAL_SIZE / $DU_SIZE" | /usr/bin/bc -l)
-		CPERCENT=$(echo "100 / $CRATIO" | /usr/bin/bc -l)
-		CPERCENT=$(echo "100 - $CPERCENT" | /usr/bin/bc -l)
-		CPERCENT=$(round "$CPERCENT" 2)
-		echo -e "HFS+ Compression Ratio:\t$CPERCENT %"
+		echo -e "Virtual Size [mdls]:\t$PHYSICAL_SIZE_INFO"
 	else
 		COMPRESSED="false"
-		echo -e "Physical Size:\t$PHYSICAL_SIZE_INFO"
+		echo -e "Physical Size [mdls]:\t$PHYSICAL_SIZE_INFO"
 	fi
 else
-	echo -e "Physical Size:\t$PHYSICAL_SIZE_INFO"
+	echo -e "Physical Size [mdls]:\t$PHYSICAL_SIZE_INFO"
 	COMPRESSED="unknown"
 fi
+
+# data size (total byte count)
+DATA_SIZE=$(echo "$SIZE_LIST" | /usr/bin/grep -v '^d' | /usr/bin/awk '{total += $6} END {printf "%.0f", total}')
+DATA_SIZE_MB=$(humandecimal "$DATA_SIZE")
+DATA_SIZE_MIB=$(humanbinary "$DATA_SIZE")
+DATA_SIZE_T=$(echo "$DATA_SIZE" | /usr/bin/awk '{printf("%'"'"'d\n",$1);}')
+if [[ "$DATA_SIZE_MB" == "" ]] && [[ "$DATA_SIZE_MIB" == "" ]] ; then
+	DATA_SIZE_INFO="$DATA_SIZE_T B"
+else
+	DATA_SIZE_INFO="$DATA_SIZE_T B ($DATA_SIZE_MB, $DATA_SIZE_MIB)"
+fi
+echo -e "Data Size [stat]:\t$DATA_SIZE_INFO"
+
+# Resource fork size
+EXTRA_LIST=$(echo "$TOTAL_LIST" | /usr/bin/awk 'NF<=2' | /usr/bin/sed '/^total /d')
+RES_SIZE=$(echo "$EXTRA_LIST" | /usr/bin/grep "com.apple.ResourceFork" | /usr/bin/awk '{total += $2} END {printf "%.0f", total}')
+[[ "$RES_SIZE" == "" ]] && RES_SIZE="0"
+if [[ "$RES_SIZE" != "0" ]]; then
+	RES_SIZE_MB=$(humandecimal "$RES_SIZE")
+	RES_SIZE_MIB=$(humanbinary "$RES_SIZE")
+	RES_SIZE_T=$(echo "$RES_SIZE" | /usr/bin/awk '{printf("%'"'"'d\n",$1);}')
+	if [[ "$RES_SIZE_MB" == "" ]] && [[ "$RES_SIZE_MIB" == "" ]] ; then
+		RES_SIZE_INFO="$RES_SIZE_T B"
+	else
+		RES_SIZE_INFO="$RES_SIZE_T B ($RES_SIZE_MB, $RES_SIZE_MIB)"
+	fi
+else
+	RES_SIZE_INFO="0 B"
+fi
+echo -e "Resource Forks [stat]:\t$RES_SIZE_INFO"
+
+# apparent size (stat total + resource forks)
+APPARENT_SIZE=$(echo "$RES_SIZE + $DATA_SIZE" | /usr/bin/bc -l)
+APPARENT_SIZE_MB=$(humandecimal "$APPARENT_SIZE")
+APPARENT_SIZE_MIB=$(humanbinary "$APPARENT_SIZE")
+APPARENT_SIZE_T=$(echo "$APPARENT_SIZE" | /usr/bin/awk '{printf("%'"'"'d\n",$1);}')
+if [[ "$APPARENT_SIZE_MB" == "" ]] && [[ "$APPARENT_SIZE_MIB" == "" ]] ; then
+	APPARENT_SIZE_INFO="$APPARENT_SIZE_T B"
+else
+	APPARENT_SIZE_INFO="$APPARENT_SIZE_T B ($APPARENT_SIZE_MB, $APPARENT_SIZE_MIB)"
+fi
+echo -e "Apparent Data Size:\t$APPARENT_SIZE_INFO"
 
 # logical size as reported by macOS (mdls) -- should be the same as total byte count
 LOGICAL_SIZE=$(echo "$MDLS" | /usr/bin/awk -F"= " '/kMDItemLogicalSize/{print $2}')
@@ -362,7 +412,7 @@ else
 		LOGICAL_SIZE_INFO="$LOGICAL_SIZE_T B ($LOGICAL_SIZE_MB, $LOGICAL_SIZE_MIB)"
 	fi
 fi
-echo -e "Logical Size:\t$LOGICAL_SIZE_INFO"
+echo -e "Logical Size [mdls]:\t$LOGICAL_SIZE_INFO"
 
 # file system size as reported by FS to macOS
 FS_SIZE=$(echo "$MDLS" | /usr/bin/awk -F"= " '/kMDItemFSSize/{print $2}' | /usr/bin/sed 's/^"\(.*\)"$/\1/')
@@ -378,68 +428,13 @@ else
 		FS_SIZE_INFO="$FS_SIZE_T B ($FS_SIZE_MB, $FS_SIZE_MIB)"
 	fi
 fi
-echo -e "File System Size:\t$FS_SIZE_INFO"
-
-# total list
-TOTAL_LIST=$(ls -RAlO@ "$FILEPATH" | /usr/bin/sed -e '/^$/d' -e '/^'"$SEDPATH"'/d')
-SIZE_LIST=$(echo "$TOTAL_LIST" | /usr/bin/awk 'NF>2')
-
-# data size (total byte count)
-DATA_SIZE=$(echo "$SIZE_LIST" | /usr/bin/grep -v '^d' | /usr/bin/awk '{total += $6} END {printf "%.0f", total}')
-DATA_SIZE_MB=$(humandecimal "$DATA_SIZE")
-DATA_SIZE_MIB=$(humanbinary "$DATA_SIZE")
-DATA_SIZE_T=$(echo "$DATA_SIZE" | /usr/bin/awk '{printf("%'"'"'d\n",$1);}')
-if [[ "$DATA_SIZE_MB" == "" ]] && [[ "$DATA_SIZE_MIB" == "" ]] ; then
-	DATA_SIZE_INFO="$DATA_SIZE_T B"
-else
-	DATA_SIZE_INFO="$DATA_SIZE_T B ($DATA_SIZE_MB, $DATA_SIZE_MIB)"
-fi
-echo -e "Data Size:\t$DATA_SIZE_INFO"
-
-# Resource fork size
-EXTRA_LIST=$(echo "$TOTAL_LIST" | /usr/bin/awk 'NF<=2' | /usr/bin/sed -e '/^total /d' -e '/^'"$SEDPATH"'/d')
-RES_SIZE=$(echo "$EXTRA_LIST" | /usr/bin/grep "com.apple.ResourceFork" | /usr/bin/awk '{total += $2} END {printf "%.0f", total}')
-[[ "$RES_SIZE" == "" ]] && RES_SIZE="0"
-if [[ "$RES_SIZE" != "0" ]]; then
-	RES_SIZE_MB=$(humandecimal "$RES_SIZE")
-	RES_SIZE_MIB=$(humanbinary "$RES_SIZE")
-	RES_SIZE_T=$(echo "$RES_SIZE" | /usr/bin/awk '{printf("%'"'"'d\n",$1);}')
-	if [[ "$RES_SIZE_MB" == "" ]] && [[ "$RES_SIZE_MIB" == "" ]] ; then
-		RES_SIZE_INFO="$RES_SIZE_T B"
-	else
-		RES_SIZE_INFO="$RES_SIZE_T B ($RES_SIZE_MB, $RES_SIZE_MIB)"
-	fi
-else
-	RES_SIZE_INFO="0 B"
-fi
-echo -e "Resource Forks:\t$RES_SIZE_INFO"
-
-# apparent size (stat total + resource forks)
-APPARENT_SIZE=$(echo "$RES_SIZE + $DATA_SIZE" | /usr/bin/bc -l)
-APPARENT_SIZE_MB=$(humandecimal "$APPARENT_SIZE")
-APPARENT_SIZE_MIB=$(humanbinary "$APPARENT_SIZE")
-APPARENT_SIZE_T=$(echo "$APPARENT_SIZE" | /usr/bin/awk '{printf("%'"'"'d\n",$1);}')
-if [[ "$APPARENT_SIZE_MB" == "" ]] && [[ "$APPARENT_SIZE_MIB" == "" ]] ; then
-	APPARENT_SIZE_INFO="$APPARENT_SIZE_T B"
-else
-	APPARENT_SIZE_INFO="$APPARENT_SIZE_T B ($APPARENT_SIZE_MB, $APPARENT_SIZE_MIB)"
-fi
-echo -e "Apparent Data Size:\t$APPARENT_SIZE_INFO"
+echo -e "File System Size [mdls]:\t$FS_SIZE_INFO"
 
 # slack space (physical size, uncompressed - datasize incl. resource forks)
-SLACK_STATUS="true"
-SLACK=$(echo "$DU_SIZE - $APPARENT_SIZE" | /usr/bin/bc -l)
+SLACK=$(echo "$SIZEONDISK - $APPARENT_SIZE" | /usr/bin/bc -l)
 if [ "$SLACK" -lt 0 ] ; then
-	if [[ "$FTYPEX" == "Directory" ]] ; then
-		SLACK_STATUS="false"
-	else
-		CLUSTERS=$(echo "$APPARENT_SIZE / $BLOCKSIZE" | /usr/bin/bc)
-		((CLUSTERS++))
-		ONDISK=$(echo "$CLUSTERS * $BLOCKSIZE" | /usr/bin/bc -l)
-		SLACK=$(echo "$ONDISK - $APPARENT_SIZE" | /usr/bin/bc -l)
-	fi
-fi
-if [[ "$SLACK_STATUS" != "false" ]] ; then
+	SLACK_INFO="none"
+else
 	SLACK_MB=$(humandecimal "$SLACK")
 	SLACK_MIB=$(humanbinary "$SLACK")
 	SLACK_T=$(echo "$SLACK" | /usr/bin/awk '{printf("%'"'"'d\n",$1);}')
@@ -448,10 +443,15 @@ if [[ "$SLACK_STATUS" != "false" ]] ; then
 	else
 		SLACK_INFO="$SLACK_T B ($SLACK_MB, $SLACK_MIB)"
 	fi
-else
-	SLACK_INFO="n/a"
 fi
 echo -e "Slack Space:\t$SLACK_INFO"
+if [[ "$COMPRESSED" == "true" ]] ; then
+	CRATIO=$(echo "$PHYSICAL_SIZE / $SIZEONDISK" | /usr/bin/bc -l)
+	CPERCENT=$(echo "100 / $CRATIO" | /usr/bin/bc -l)
+	CPERCENT=$(echo "100 - $CPERCENT" | /usr/bin/bc -l)
+	CPERCENT=$(round "$CPERCENT" 2)
+	echo -e "Compression Ratio:\t$CPERCENT %"
+fi
 
 # Xattr size
 XATTR_SIZE=$(echo "$EXTRA_LIST" | /usr/bin/grep -v "com.apple.ResourceFork" | /usr/bin/awk '{total += $2} END {printf "%.0f", total}')
@@ -468,7 +468,7 @@ if [[ "$XATTR_SIZE" != "0" ]] ; then
 else
 	XATTR_SIZE_INFO="0 B"
 fi
-echo -e "Extended Attributes:\t$XATTR_SIZE_INFO"
+echo -e "Extended Attributes [stat]:\t$XATTR_SIZE_INFO"
 
 # total size (data+resources+xattr) = total size
 TOTAL_SIZE=$(echo "$APPARENT_SIZE + $XATTR_SIZE" | /usr/bin/bc -l)
@@ -480,10 +480,10 @@ if [[ "$TOTAL_SIZE_MB" == "" ]] && [[ "$TOTAL_SIZE_MIB" == "" ]] ; then
 else
 	TOTAL_SIZE_INFO="$TOTAL_SIZE_T B ($TOTAL_SIZE_MB, $TOTAL_SIZE_MIB)"
 fi
-echo -e "Total Data Size:\t$TOTAL_SIZE_INFO"
+echo -e "Data Size on Disk:\t$TOTAL_SIZE_INFO"
 
 echo ""
-echo -e "${PURPLE}${BOLD}Unix Dates${NOCOL}"
+echo -e "\t${STANDOUT}Dates                    ${RESET}"
 
 # dates
 BIRTHTIME=$(echo "$STAT" | /usr/bin/awk -F"\"" '{print $8}')
@@ -497,9 +497,6 @@ echo -e "Modified:\t$LASTMODIFY"
 
 LASTACCESS=$(echo "$STAT" | /usr/bin/awk -F"\"" '{print $2}')
 echo -e "Accessed:\t$LASTACCESS"
-
-echo ""
-echo -e "${PURPLE}${BOLD}macOS Dates${NOCOL}"
 
 DL_DATE_RAW=$(echo "$MDLS" | /usr/bin/awk -F"\"" '/kMDItemDownloadedDate/{getline;print $2}')
 if [[ "$DL_DATE_RAW" == "" ]] || [[ "$DL_DATE_RAW" == "(null)" ]] ; then
@@ -526,7 +523,9 @@ fi
 echo -e "Last Used:\t$LASTUSED"
 
 echo ""
-echo -e "${PURPLE}${BOLD}macOS General Information${NOCOL}"
+echo -e "\t${STANDOUT}macOS General Information${RESET}"
+
+### LOOK FOR GetFileInfo ??? FASTER ???
 
 # check if Spotlight is enabled
 MDUTIL=$(/usr/bin/mdutil -s "$MPOINT" 2>&1 | tail -n 1)
@@ -724,7 +723,7 @@ fi
 echo -e "Use Count:\t$USECOUNT"
 
 echo ""
-echo -e "${PURPLE}${BOLD}macOS Security${NOCOL}"
+echo -e "\t${STANDOUT}macOS Security           ${RESET}"
 
 # macOS security & App Store info
 ASSESS=$(/usr/sbin/spctl -v --assess "$FILEPATH" 2>&1)
@@ -859,7 +858,7 @@ echo -e "Quarantine:\t$QUARANTINE"
 if [[ "$TTYPE" == "package" ]] && [[ "$PLIST_INFO" == "TRUE" ]] ; then
 
 	echo ""
-	echo -e "${PURPLE}${BOLD}macOS Bundle Information${NOCOL}"
+	echo -e "\t${STANDOUT}macOS Bundle Information ${RESET}"
 
 	BUNDLE_NAME=$(echo "$JPLIST" | /usr/bin/awk -F"\"" '/CFBundleName/{print $4}')
 	[[ "$BUNDLE_NAME" == "" ]] && BUNDLE_NAME="n/a"
@@ -960,9 +959,9 @@ fi
 if [[ "$FTYPEX" == "Directory" ]] ; then
 
 	echo ""
-	echo -e "${PURPLE}${BOLD}Contents${NOCOL}"
+	echo -e "\t${STANDOUT}File Contents            ${RESET}"
 
-	FULL_LIST=$(echo "$TOTAL_LIST" | /usr/bin/awk 'NF>2' | /usr/bin/sed -e '/\ \.$/d' -e '/\ \.\.$/d' -e '/^.\//d')
+	FULL_LIST=$(echo "$TOTAL_LIST" | /usr/bin/awk 'NF>=11 {print substr($0, index($0,$2))}' | /usr/bin/sed -e '/\ \.$/d' -e '/\ \.\.$/d' -e '/^.\//d')
 	if [[ "$FULL_LIST" != "" ]] ; then
 
 		RES_NUMBER=$(echo "$TOTAL_LIST" | /usr/bin/grep "com.apple.ResourceFork" | /usr/bin/wc -l | xargs)
@@ -980,23 +979,30 @@ if [[ "$FTYPEX" == "Directory" ]] ; then
 
 		[[ "$RES_NUMBER" != "0" ]] && echo -e "Resource Forks:\t$RES_NUMBER"
 
-		INV_LIST=$(echo "$FULL_LIST" | /usr/bin/awk '{print $10}')
+		INV_LIST=$(echo "$FULL_LIST" | /usr/bin/awk '{print $11}')
 		INV_CONTAIN=$(echo "$INV_LIST" | /usr/bin/grep "^\." | /usr/bin/wc -l | xargs)
-		[[ "$INV_CONTAIN" != "0" ]] && echo -e "Invisible:\t$INV_CONTAIN"
-
+		[[ "$INV_CONTAIN" == "" ]] && INV_CONTAIN="0"
 		DSSTORE_CONTAIN=$(echo "$INV_LIST" | /usr/bin/grep "^\.DS_Store" | /usr/bin/wc -l | xargs)
-		[[ "$DSSTORE_CONTAIN" != "0" ]] && echo -e ".DS_Store:\t$DSSTORE_CONTAIN"
-
+		[[ "$DSSTORE_CONTAIN" == "" ]] && DSSTORE_CONTAIN="0"
 		LOCAL_CONTAIN=$(echo "$INV_LIST" | /usr/bin/grep "^\.localized" | /usr/bin/wc -l | xargs)
-		[[ "$LOCAL_CONTAIN" != "0" ]] && echo -e ".localized:\t$LOCAL_CONTAIN"
-
+		[[ "$LOCAL_CONTAIN" == "" ]] && LOCAL_CONTAIN="0"
 		OTHER_INV=$(echo "$INV_CONTAIN - $DSSTORE_CONTAIN - $LOCAL_CONTAIN" | /usr/bin/bc -l)
 		[[ "$OTHER_INV" == "" ]] && OTHER_INV="0"
-		[[ "$OTHER_INV" != "0" ]] && echo -e "Invisible (other):\t$OTHER_INV"
+		if [[ "$OTHER_INV" == "$INV_CONTAIN" ]] && [[ "$INV_CONTAIN" != "0" ]] ; then
+			echo -e "invisible:\t$INV_CONTAIN"
+		else
+			[[ "$INV_CONTAIN" != "0" ]] && echo -e "invisible:\t$INV_CONTAIN"
+			[[ "$DSSTORE_CONTAIN" != "0" ]] && echo -e ".DS_Store:\t$DSSTORE_CONTAIN"
+			[[ "$LOCAL_CONTAIN" != "0" ]] && echo -e ".localized:\t$LOCAL_CONTAIN"
+			[[ "$OTHER_INV" != "0" ]] && echo -e "invisible (other):\t$OTHER_INV"
+		fi
 
 		CHFLAGS_ALL=$(echo "$FULL_LIST" | /usr/bin/awk '{print $5}')
 		FLAGS_COUNT=$(echo "$CHFLAGS_ALL" | /usr/bin/grep -v "-" | /usr/bin/awk '{gsub(","," ");print}'| /usr/bin/awk '{for(w=1;w<=NF;w++) print $w}' | /usr/bin/sort | /usr/bin/uniq -c | /usr/bin/sort -nr | /usr/bin/awk '{print $2 ":\t" $1}')
 		[[ "$FLAGS_COUNT" != "" ]] && echo -e "$FLAGS_COUNT"
+
+		### files with ACL >>> needs the -e option for FULL LIST ; awk less than 11, no SEDPATH, no total etc.
+		### echo -e "ACE Total:\t$ACE_TOTAL"
 
 	else
 		echo -e "Contains:\t0 items"
