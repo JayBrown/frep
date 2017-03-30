@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# frep v0.9.9 beta
+# frep v0.9.10 beta
 # macOS File Reporter
 
 SCRNAME=$(/usr/bin/basename $0)
@@ -115,8 +115,15 @@ STATS=$(/usr/bin/stat -s "$FILEPATH")
 ### CHECK ON SMB MOUNTS
 FPDF=$(/bin/df -Pi "$FILEPATH" | /usr/bin/tail -1)
 FSYSTEM=$(echo "$FPDF" | /usr/bin/awk '{print $1}')
-DISKUTIL=$(/usr/sbin/diskutil info "$FSYSTEM")
+DISKUTIL=$(/usr/sbin/diskutil info "$FSYSTEM" 2>&1)
+[[ "$DISKUTIL" == "Could not find disk:"* ]] && DISKUTIL=""
 CLUSTERSIZE=$(echo "$DISKUTIL" | /usr/bin/awk '/Device Block Size/{print $4}')
+if [[ "$CLUSTERSIZE" == "" ]] ; then
+	CLUSTERSIZE="0"
+	SOD_ADD=" [approximate]"
+else
+	SOD_ADD=""
+fi
 
 echo ""
 echo -e "\t${STANDOUT}File Information        ${RESET}"
@@ -445,10 +452,11 @@ if [[ "$FTYPEX" == "Directory" ]] ; then
 	STATSIZE_B=$(echo "$STAT" | /usr/bin/awk '{print $8}')
 	STATSIZE_MB=$(humandecimal "$STATSIZE_B")
 	STATSIZE_MIB=$(humanbinary "$STATSIZE_B")
+	STATSIZE_HR=$(echo "$STATSIZE_B" | /usr/bin/awk '{printf("%'"'"'d\n",$1);}')
 	if [[ "$STATSIZE_MB" == "" ]] && [[ "$STATSIZE_MIB" == "" ]] ; then
-		STATSIZE="$STATSIZE_B B"
+		STATSIZE="$STATSIZE_HR B"
 	else
-		STATSIZE="$STATSIZE_B B ($STATSIZE_MB, $STATSIZE_MIB)"
+		STATSIZE="$STATSIZE_HR B ($STATSIZE_MB, $STATSIZE_MIB)"
 	fi
 	echo -e "Data Size [stat]:\t$STATSIZE"
 
@@ -458,10 +466,11 @@ if [[ "$FTYPEX" == "Directory" ]] ; then
 	if [[ "$XTRASIZE" != "0" ]] ; then
 		XTRASIZE_MB=$(humandecimal "$XTRASIZE")
 		XTRASIZE_MIB=$(humanbinary "$XTRASIZE")
+		XTRASIZE_HR=$(echo "$XTRASIZE" | /usr/bin/awk '{printf("%'"'"'d\n",$1);}')
 		if [[ "$XTRASIZE_MB" == "" ]] && [[ "$XTRASIZE_MIB" == "" ]] ; then
-			XTRASIZE_INFO="$XTRASIZE B"
+			XTRASIZE_INFO="$XTRASIZE_HR B"
 		else
-			XTRASIZE_INFO="$XTRASIZE B ($XTRASIZE_MB, $XTRASIZE_MIB)"
+			XTRASIZE_INFO="$XTRASIZE_HR B ($XTRASIZE_MB, $XTRASIZE_MIB)"
 		fi
 	else
 		XTRASIZE_INFO="0 B"
@@ -471,10 +480,11 @@ if [[ "$FTYPEX" == "Directory" ]] ; then
 	ROOT_TOTAL=$(echo "$STATSIZE_B + $XTRASIZE" | /usr/bin/bc -l)
 	ROOT_TOTAL_MB=$(humandecimal "$ROOT_TOTAL")
 	ROOT_TOTAL_MIB=$(humanbinary "$ROOT_TOTAL")
+	ROOT_TOTAL_HR=$(echo "$ROOT_TOTAL" | /usr/bin/awk '{printf("%'"'"'d\n",$1);}')
 	if [[ "$ROOT_TOTAL_MB" == "" ]] && [[ "$ROOT_TOTAL_MIB" == "" ]] ; then
-		ROOT_TSIZE="$ROOT_TOTAL B"
+		ROOT_TSIZE="$ROOT_TOTAL_HR B"
 	else
-		ROOT_TSIZE="$ROOT_TOTAL B ($ROOT_TOTAL_MB, $ROOT_TOTAL_MIB)"
+		ROOT_TSIZE="$ROOT_TOTAL_HR B ($ROOT_TOTAL_MB, $ROOT_TOTAL_MIB)"
 	fi
 	echo -e "Size On Volume:\t$ROOT_TSIZE"
 
@@ -491,30 +501,39 @@ SEDPATH=$(echo "$FILEPATH" | /usr/bin/awk '{gsub("/","\\/");print}')
 SIZE_LIST=$(echo "$TOTAL_LIST" | /usr/bin/sed '/^'"$SEDPATH"'/d' | /usr/bin/awk 'NF>=11 {print substr($0, index($0,$2))}')
 
 # size on disk calculated from ls/stat output
-BLOCKLIST=$(echo "$TOTAL_LIST" | /usr/bin/sed '/^'"$SEDPATH"'/d' | /usr/bin/awk 'NF>=11' | /usr/bin/awk '{print $2,$1}')
-BLOCKSONDISK=$(echo "$BLOCKLIST" | /usr/bin/grep -v '^d' | /usr/bin/awk '{total += $2} END {printf "%.0f", total}')
-echo -e "Device Blocks:\t$BLOCKSONDISK"
-SIZEONDISK=$(echo "$BLOCKSONDISK * $CLUSTERSIZE" | /usr/bin/bc -l)
-[[ "$SIZEONDISK" == "" ]] && SIZEONDISK="0"
-SOD_MB=$(humandecimal "$SIZEONDISK")
-SOD_MIB=$(humanbinary "$SIZEONDISK")
-SOD_T=$(echo "$SIZEONDISK" | /usr/bin/awk '{printf("%'"'"'d\n",$1);}')
-if [[ "$SOD_MB" == "" ]] && [[ "$SOD_MIB" == "" ]] ; then
-	SOD_INFO="$SOD_T B"
+if [[ "$CLUSTERSIZE" != "0" ]] ; then
+	BLOCKLIST=$(echo "$TOTAL_LIST" | /usr/bin/sed '/^'"$SEDPATH"'/d' | /usr/bin/awk 'NF>=11' | /usr/bin/awk '{print $2,$1}')
+	BLOCKSONDISK=$(echo "$BLOCKLIST" | /usr/bin/grep -v '^d' | /usr/bin/awk '{total += $2} END {printf "%.0f", total}')
+	echo -e "Device Blocks:\t$BLOCKSONDISK"
+	SIZEONDISK=$(echo "$BLOCKSONDISK * $CLUSTERSIZE" | /usr/bin/bc -l)
+	[[ "$SIZEONDISK" == "" ]] && SIZEONDISK="0"
+	SOD_MB=$(humandecimal "$SIZEONDISK")
+	SOD_MIB=$(humanbinary "$SIZEONDISK")
+	SOD_T=$(echo "$SIZEONDISK" | /usr/bin/awk '{printf("%'"'"'d\n",$1);}')
+	if [[ "$SOD_MB" == "" ]] && [[ "$SOD_MIB" == "" ]] ; then
+		SOD_INFO="$SOD_T B"
+	else
+		SOD_INFO="$SOD_T B ($SOD_MB, $SOD_MIB)"
+	fi
+	echo -e "Size On Disk [stat]:\t$SOD_INFO"
 else
-	SOD_INFO="$SOD_T B ($SOD_MB, $SOD_MIB)"
+	echo -e "Size On Disk [stat]:\t- [unknown device block size]"
 fi
-echo -e "Size On Disk [stat]:\t$SOD_INFO"
 
 # disk usage reported by HFS+ to du
 DISK_USAGE=$(/usr/bin/du -k -d 0 "$FILEPATH" | /usr/bin/head -n 1 | /usr/bin/awk '{print $1}')
 DU_SIZE=$(echo "$DISK_USAGE * 1024" | /usr/bin/bc -l)
+DU_SIZE_MB=$(humandecimal "$DU_SIZE")
+DU_SIZE_MIB=$(humanbinary "$DU_SIZE")
 DU_SIZE_T=$(echo "$DU_SIZE" | /usr/bin/awk '{printf("%'"'"'d\n",$1);}')
 if [[ "$DU_SIZE" != "$SIZEONDISK" ]] ; then
-	echo -e "Disk Usage [du]:\t$DU_SIZE_T B [probable HFS+ error]"
+	if [[ "$CLUSTERSIZE" == "0" ]] ; then
+		SIZEONDISK="$DU_SIZE"
+		echo -e "Disk Usage [du]:\t$DU_SIZE_T B ($DU_SIZE_MB, $DU_SIZE_MIB)$SOD_ADD"
+	else
+		echo -e "Disk Usage [du]:\t$DU_SIZE_T B [probable HFS+ error]"
+	fi
 else
-	DU_SIZE_MB=$(humandecimal "$DU_SIZE")
-	DU_SIZE_MIB=$(humanbinary "$DU_SIZE")
 	if [[ "$DU_SIZE_MB" == "" ]] && [[ "$DU_SIZE_MIB" == "" ]] ; then
 		DU_SIZE_INFO="$DU_SIZE_T B"
 	else
@@ -1254,10 +1273,12 @@ if [[ "$FTYPEX" == "Directory" ]] ; then
 			RCLOAKED=$(( $RGDECOUNT - $ROOTCOUNT ))
 			RFILECOUNT=$(echo "$ROOTLIST" | /usr/bin/grep -v "^d" | /usr/bin/wc -l | xargs)
 			DIRCOUNT=$(echo "$FTYPES_COUNT" | /usr/bin/awk -F":" '/Directories:/{print $2}' | xargs)
+			[[ "$DIRCOUNT" == "" ]] && DIRCOUNT="0"
 			FILECOUNT=$(( $ITEM_COUNT - $DIRCOUNT  - $RFILECOUNT + 1 ))
 			RDIRCOUNT=$(echo "$ROOTLIST" | /usr/bin/grep "^d" | /usr/bin/wc -l | xargs)
 			DIRLIST=$(echo "$TOTAL_LIST" | /usr/bin/grep "$FILEPATH" | /usr/bin/sed 's/.$//')
 			GDESUBTRACT=$(( $DIRCOUNT * 9 ))
+			### GDESUBTRACT=$(echo "$DIRCOUNT * 9" | /usr/bin/bc -l)
 
 			GDESUBCOUNT="0"
 			while read -r SUBFOLDER
@@ -1266,13 +1287,15 @@ if [[ "$FTYPEX" == "Directory" ]] ; then
 				GDESUBCOUNT=$(( $GDESUBCOUNT + $GDESUB_ADD ))
 			done < <(echo "$DIRLIST")
 			CLOAKCOUNT=$(( $GDESUBCOUNT - $GDESUBTRACT - $FILECOUNT - $DIRCOUNT + $RDIRCOUNT + $RCLOAKED ))
-			[[ "$CLOAKCOUNT" == "0" ]] && CLOAKCOUNT="-"
+			[[ "$CLOAKCOUNT" -le 0 ]] && CLOAKCOUNT="-"
 			echo -e "cloaked:\t$CLOAKCOUNT"
 		fi
 
-		ACESALL=$(echo "$TOTAL_LIST" | /usr/bin/awk 'NF<=2' | /usr/bin/sed '/^'"$SEDPATH"'/d' | /usr/bin/sed '/^total /d' | /usr/bin/grep -v "com.apple.ResourceFork")
-		ACESTOTAL=$(echo "$ACESALL" | /usr/bin/wc -l | xargs)
-		echo -e "ACE Total:\t$ACESTOTAL"
+		ACESALL=$(echo "$TOTAL_LIST" | /usr/bin/awk 'NF<=2' | /usr/bin/grep -v "com.apple.ResourceFork" | /usr/bin/sed -e '/^'"$SEDPATH"'/d' -e '/^total /d' -e '/^$/d')
+		if [[ "$ACESALL" != "" ]] ; then
+			ACESTOTAL=$(echo "$ACESALL" | /usr/bin/wc -l | xargs)
+			echo -e "ACE Total:\t$ACESTOTAL"
+		fi
 
 	else
 		echo -e "Contains:\t0 items"
@@ -1336,7 +1359,11 @@ echo -e "Available Inodes:\t$ITOTAL"
 echo -e "Free Inodes:\t$IFREE"
 echo -e "Used Inodes:\t$IUSED ($IPERC)"
 
-echo -e "Device Block Size:\t$CLUSTERSIZE B"
+if [[ "$CLUSTERSIZE" != "0" ]] ; then
+	echo -e "Device Block Size:\t$CLUSTERSIZE B"
+else
+	echo -e "Device Block Size:\t-"
+fi
 
 BLOCKSIZE=$(echo "$STATS" | /usr/bin/awk '{print $13}' | /usr/bin/awk -F= '{print $2}')
 echo -e "Allocation Block Size:\t$BLOCKSIZE B"
@@ -1363,6 +1390,17 @@ echo -e "Journal:\t$JOURNAL"
 VOL_NAME=$(echo "$DISKUTIL" | /usr/bin/awk -F":" '/Volume Name/{print $2}' | xargs)
 [[ "$VOL_NAME" == "" ]] && VOL_NAME="-"
 echo -e "Volume Name:\t$VOL_NAME"
+
+if [[ "$VOL_NAME" == "-" ]] ; then
+	SMB=$(/usr/bin/smbutil statshares -m "$MPOINT" 2>/dev/null)
+	if [[ "$SMB" != "" ]] ; then
+		SMBSERVER=$(echo "$SMB" | /usr/bin/awk '/SERVER_NAME/{print substr($0, index($0,$2))}')
+		echo -e "SMB Server:\t$SMBSERVER"
+		SMBSERVER=$(echo "$SMBSERVER" | /usr/bin/awk '{gsub(" ","%20");print}')
+		EXTVOLNAME=$(echo "$FSYSTEM" | /usr/bin/awk -F"$SMBSERVER/" '{print $2}')
+		echo -e "Server Volume Name:\t$EXTVOLNAME"
+	fi
+fi
 
 # check if Spotlight is enabled
 MDUTIL=$(/usr/bin/mdutil -s "$MPOINT" 2>&1 | /usr/bin/tail -n 1)
