@@ -12,7 +12,7 @@ beta; already works, but might have some errors
 * `git clone`, `chmod +x`, and `ln -s` to one of your bin directories as e.g. `frep`
 * *alternative*: download, unpack, `chmod +x`, `mv` or `cp` to one of your bin directories as e.g. `frep`
 * **best practice:** run as root with `sudo frep <TARGET>` to bypass the preliminary check for read permissions
-* full functionality only systems with **Xcode** (or **Developer Tools**) and Rixstep `gde` installed
+* full functionality only on systems with **Xcode** (or **Developer Tools**) and Rixstep `gde` installed
 
 ## Sample output
 
