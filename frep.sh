@@ -1,14 +1,38 @@
 #!/bin/bash
 
-# frep v0.9.8 beta
+# frep v0.9.9 beta
 # macOS File Reporter
+
+SCRNAME=$(/usr/bin/basename $0)
+
+# check for single user
+SINGLEUSER=$(/usr/sbin/sysctl -n kern.singleuser)
+if [[ "$SINGLEUSER" == "1" ]] ; then
+	echo "Error! $SCRNAME is not meant for single-user mode."
+	exit
+fi
+
+# check for argument(s)
+if [ $# -lt 1 ] ; then
+    echo "Usage: [sudo] $SCRNAME <PATH>"
+    exit
+fi
 
 STANDOUT=$(tput smso)
 BOLD=$(tput bold)
 RESET=$(tput sgr0)
 
-LANG=en_US.UTF-8
-ACCOUNT=$(id -un)
+export LANG=en_US.UTF-8
+LOGNAME=$(who am i | /usr/bin/awk '{print $1}')
+EXECUSER=$(/usr/bin/id -un)
+
+ACCOUNT=$(/usr/bin/id -unr "$LOGNAME")
+USERID=$(/usr/bin/id -ur "$LOGNAME")
+UGROUP=$(/usr/bin/id -gnr "$LOGNAME")
+UGROUPID=$(/usr/bin/id -gr "$LOGNAME")
+
+USERGROUPS=$(/usr/bin/id -Gn "$ACCOUNT")
+USERGROUPSN=$(/usr/bin/id -G "$ACCOUNT")
 
 # set -x
 # PS4=':$LINENO+'
@@ -46,23 +70,17 @@ humandecimal () {
 	[[ "$DECSIZE" != *" B" ]] && echo "$DECSIZE"
 }
 
-SCRNAME=$(/usr/bin/basename $0)
-if [ $# -lt 1 ] ; then
-    echo "Usage: $SCRNAME <PATH>"
-    exit
-fi
-
 for FILEPATH in "$@"
 do
 
 # check if exists
-if [[ ! -e "$FILEPATH" ]] ; then
+if [[ ! -a "$FILEPATH" ]] ; then
 	echo "Error! $FILEPATH does not exist!"
 	continue
 fi
 
 # check if readable
-if [[ "$ACCOUNT" != "root" ]] ; then
+if [[ "$EXECUSER" != "root" ]] ; then
 	if [[ ! -r "$FILEPATH" ]] ; then
 		echo "Error! Target is not readable."
 		echo "Please run the script again as root using 'sudo $SCRNAME'"
@@ -87,21 +105,25 @@ fi
 
 tabs 31
 
-echo -e "${STANDOUT}                              ${BOLD}macOS File Report        ${RESET}"
+echo -e "${STANDOUT}                              ${BOLD}macOS File Report       ${RESET}"
 
 # stat first
 STAT=$(/usr/bin/stat "$FILEPATH")
 STATS=$(/usr/bin/stat -s "$FILEPATH")
 
+# some volume info first
+### CHECK ON SMB MOUNTS
+FPDF=$(/bin/df -Pi "$FILEPATH" | /usr/bin/tail -1)
+FSYSTEM=$(echo "$FPDF" | /usr/bin/awk '{print $1}')
+DISKUTIL=$(/usr/sbin/diskutil info "$FSYSTEM")
+CLUSTERSIZE=$(echo "$DISKUTIL" | /usr/bin/awk '/Device Block Size/{print $4}')
+
 echo ""
-echo -e "\t${STANDOUT}General Information      ${RESET}"
+echo -e "\t${STANDOUT}File Information        ${RESET}"
 
 # file info
 BASENAME=$(/usr/bin/basename "$FILEPATH")
 echo -e "Basename:${RESET}\t$BASENAME"
-
-DIRNAME=$(/usr/bin/dirname "$FILEPATH")
-echo -e "Path:\t$DIRNAME"
 
 if [[ "$BASENAME" == *"."* ]] ; then
 	EXTENSION=".${BASENAME##*.}"
@@ -112,78 +134,8 @@ else
 fi
 echo -e "Extension:\t$EXTENSION"
 
-# volume info
-echo ""
-echo -e "\t${STANDOUT}Volume Information       ${RESET}"
-
-FPDF=$(/bin/df -Pi "$FILEPATH" | /usr/bin/tail -1)
-FSYSTEM=$(echo "$FPDF" | /usr/bin/awk '{print $1}')
-echo -e "File System:\t$FSYSTEM"
-
-MPOINT=$(echo "$FPDF" | /usr/bin/awk '{ for(i=9; i<=NF; i++) printf "%s",$i (i==NF?ORS:OFS) }')
-echo -e "Mount Point:\t$MPOINT"
-
-FSOWNER=$(ls -dl "$MPOINT" | /usr/bin/awk '{print $3 ":" $4}')
-[[ "$FSOWNER" == "" ]] && FSOWNER="-"
-echo -e "File System Owner:\t$FSOWNER"
-
-DISKUTIL=$(/usr/sbin/diskutil info "$FSYSTEM")
-
-FSTYPE=$(echo "$DISKUTIL" | /usr/bin/awk -F":" '/Type \(Bundle\)/{print $2}' | xargs)
-[[ "$FSTYPE" == "" ]] && FSTYPE="-"
-echo -e "File System Type:\t$FSTYPE"
-
-IUSED=$(echo "$FPDF" | /usr/bin/awk '{print $6}')
-IFREE=$(echo "$FPDF" | /usr/bin/awk '{print $7}')
-ITOTAL=$(( $IUSED + $IFREE ))
-ITOTAL=$(echo "$ITOTAL" | /usr/bin/awk '{printf("%'"'"'d\n",$1);}')
-IFREE=$(echo "$IFREE" | /usr/bin/awk '{printf("%'"'"'d\n",$1);}')
-IUSED=$(echo "$IUSED" | /usr/bin/awk '{printf("%'"'"'d\n",$1);}')
-IPERC=$(echo "$FPDF" | /usr/bin/awk '{print $8}')
-echo -e "Available Inodes:\t$ITOTAL"
-echo -e "Free Inodes:\t$IFREE"
-echo -e "Used Inodes:\t$IUSED ($IPERC)"
-
-CLUSTERSIZE=$(echo "$DISKUTIL" | /usr/bin/awk '/Device Block Size/{print $4}')
-echo -e "Device Block Size:\t$CLUSTERSIZE B"
-
-BLOCKSIZE=$(echo "$STATS" | /usr/bin/awk '{print $13}' | /usr/bin/awk -F= '{print $2}')
-echo -e "Allocation Block Size:\t$BLOCKSIZE B"
-
-BUSED=$(echo "$FPDF" | /usr/bin/awk '{print $3}')
-BUSED=$(echo "$BUSED" | /usr/bin/awk '{printf("%'"'"'d\n",$1);}')
-BFREE=$(echo "$FPDF" | /usr/bin/awk '{print $4}')
-BFREE=$(echo "$BFREE" | /usr/bin/awk '{printf("%'"'"'d\n",$1);}')
-BTOTAL=$(echo "$FPDF" | /usr/bin/awk '{print $2}')
-BTOTAL=$(echo "$BTOTAL" | /usr/bin/awk '{printf("%'"'"'d\n",$1);}')
-BPERC=$(echo "$FPDF" | /usr/bin/awk '{print $5}')
-echo -e "Available Blocks:\t$BTOTAL"
-echo -e "Free Blocks:\t$BFREE"
-echo -e "Used Blocks:\t$BUSED ($BPERC)"
-
-FSPERSONA=$(echo "$DISKUTIL" | /usr/bin/awk -F":" '/File System Personality/{print $2}' | xargs)
-[[ "$FSPERSONA" == "" ]] && FSPERSONA="-"
-echo -e "File System Personality:\t$FSPERSONA"
-
-JOURNAL=$(echo "$DISKUTIL" | /usr/bin/awk -F":" '/Journal:/{print $2}' | xargs)
-[[ "$JOURNAL" == "" ]] && JOURNAL="-"
-echo -e "Journal:\t$JOURNAL"
-
-VOL_NAME=$(echo "$DISKUTIL" | /usr/bin/awk -F":" '/Volume Name/{print $2}' | xargs)
-[[ "$VOL_NAME" == "" ]] && VOL_NAME="-"
-echo -e "Volume Name:\t$VOL_NAME"
-
-# check if Spotlight is enabled
-MDUTIL=$(/usr/bin/mdutil -s "$MPOINT" 2>&1 | tail -n 1)
-if [[ $(echo "$MDUTIL" | /usr/bin/grep "Indexing enabled.") != "" ]] ; then
-	SL_STATUS="enabled"
-else
-	SL_STATUS="disabled"
-fi
-echo -e "Spotlight:\t$SL_STATUS"
-
-echo ""
-echo -e "\t${STANDOUT}Unix File Information    ${RESET}"
+DIRNAME=$(/usr/bin/dirname "$FILEPATH")
+echo -e "Path:\t$DIRNAME"
 
 # file type (Unix)
 LISTING=$(ls -dlAO "$FILEPATH")
@@ -210,13 +162,14 @@ if [[ "$FTYPEX" == "Symbolic Link" ]] ; then
 	ABSPATH="$ABSDIR/$SYMTARGET"
 	echo -e "Reference:\t$ABSPATH"
 	cd /
+	[[ -d "$ABSPATH" ]] && DIRREF="true"
 fi
 
 # file type (specific)
 FILETYPE=$(/usr/bin/file "$FILEPATH" | /usr/bin/awk -F": " '{print $2}')
 echo -e "File Content:\t$FILETYPE"
 
-# Invisible (true dot file, not macOS "hidden" flag)
+# invisible (true dot file, not macOS "hidden" flag)
 if [[ "$BASENAME" == "."* ]] ; then
 	TINV="true"
 else
@@ -240,31 +193,133 @@ echo -e "Links:\t$HARDLINKS"
 FILEGENNO=$(/usr/bin/stat -f '%v' "$FILEPATH")
 echo -e "File Generation Number:\t$FILEGENNO"
 
-echo ""
-echo -e "\t${STANDOUT}Ownership & Permissions  ${RESET}"
+# checksums
 
-# Unix file flags
+if [[ "$FTYPEX" != "Directory" ]] && [[ "$DIRREF" != "true" ]] ; then
+
+	echo ""
+	echo -e "\t${STANDOUT}Checksums               ${RESET}"
+
+	CRC32HASH=$(/usr/bin/crc32 "$FILEPATH" 2>/dev/null)
+	[[ "$CRC32HASH" == "" ]] && CRC32HASH="-"
+	echo -e "CRC-32:\t$CRC32HASH"
+
+	MD5CHECKSUM=$(/sbin/md5 -q "$FILEPATH" 2>/dev/null)
+	[[ "$MD5CHECKSUM" == "" ]] && MD5CHECKSUM="-"
+	echo -e "MD5:\t$MD5CHECKSUM"
+
+	SHA1CHECKSUM=$(/usr/bin/shasum -a 1 "$FILEPATH" 2>/dev/null | /usr/bin/awk '{print $1}')
+	[[ "$SHA1CHECKSUM" == "" ]] && SHA1CHECKSUM="-"
+	echo -e "SHA-1:\t$SHA1CHECKSUM"
+
+	SHA2CHECKSUM=$(/usr/bin/shasum -a 256 "$FILEPATH" 2>/dev/null | /usr/bin/awk '{print $1}')
+	[[ "$SHA2CHECKSUM" == "" ]] && SHA2CHECKSUM="-"
+	echo -e "SHA-2 (256 bit):\t$SHA2CHECKSUM"
+
+fi
+
+# path owner & permissions
+
+echo ""
+echo -e "\t${STANDOUT}Path Owner & Permissions${RESET}"
+
+DIRSTAT=$(/usr/bin/stat "$DIRNAME")
+DIRSTATS=$(/usr/bin/stat -s "$DIRNAME")
+PUIDN=$(echo "$DIRSTAT" | /usr/bin/awk '{print $5}')
+PGIDN=$(echo "$DIRSTAT" | /usr/bin/awk '{print $6}')
+PUIDNO=$(echo "$DIRSTATS" | /usr/bin/awk '{print $5}' | /usr/bin/awk -F= '{print $2}')
+PGIDNO=$(echo "$DIRSTATS" | /usr/bin/awk '{print $6}' | /usr/bin/awk -F= '{print $2}')
+echo -e "Owner:\t$PUIDN:$PGIDN ($PUIDNO:$PGIDNO)"
+
+DIRPERM=$(echo "$DIRSTAT" | /usr/bin/awk '{print $3}')
+echo -e "Permissions:\t${DIRPERM:1}"
+
+# file owner & permissions
+
+echo ""
+echo -e "\t${STANDOUT}File Owner & Permissions${RESET}"
+
+# owner
 
 UIDN=$(echo "$STAT" | /usr/bin/awk '{print $5}')
-UIDNO=$(echo "$STATS" | /usr/bin/awk '{print $5}' | /usr/bin/awk -F= '{print $2}')
-echo -e "Owner:\t$UIDN ($UIDNO)"
-
 GIDN=$(echo "$STAT" | /usr/bin/awk '{print $6}')
+UIDNO=$(echo "$STATS" | /usr/bin/awk '{print $5}' | /usr/bin/awk -F= '{print $2}')
 GIDNO=$(echo "$STATS" | /usr/bin/awk '{print $6}' | /usr/bin/awk -F= '{print $2}')
-echo -e "Group:\t$GIDN ($GIDNO)"
+UFILEACCESS=""
+if [[ "$UIDN" == "$USERID" ]] || [[ $(echo "$USERGROUPS" | /usr/bin/grep -w "$GIDN") != "" ]] ; then
+	UFILEACCESS="true"
+fi
+echo -e "Owner:\t$UIDN:$GIDN ($UIDNO:$GIDNO)"
 
-PERMISSIONS=$(echo "$STAT" | /usr/bin/awk '{print $3}')
-echo -e "Permissions:\t$PERMISSIONS"
+# mode
 
 MODEA=$(/usr/bin/stat -f '%A' "$FILEPATH")
 MODEB=$(echo "$STATS" | /usr/bin/awk '{print $3}' | /usr/bin/awk -F= '{print $2}')
 MODE="$MODEB ($MODEA)"
 echo -e "Mode:\t$MODE"
 
+# permissions
+
+PERMISSIONS=$(echo "$STAT" | /usr/bin/awk '{print $3}')
+echo -e "Permissions:\t${PERMISSIONS:1}"
+
+GDIRACCESS=""
+if [[ "$UIDNO" == "$USERID" ]] ; then
+	PERMHR=${PERMISSIONS:1:3}
+	ID_INFO="$USERID"
+	GDIRACCESS="true"
+else
+	if [[ $(echo "$USERGROUPS" | /usr/bin/grep -w "$GIDN") != "" ]] ; then
+		ID_INFO="$UGROUPID"
+		PERMHR=${PERMISSIONS:4:3}
+		GDIRACCESS="true"
+	else
+		PERMHR=${PERMISSIONS:7:3}
+		ID_INFO="$USERID"
+	fi
+fi
+if [[ "$FTYPEX" != "Directory" ]] ; then
+	PERMHR=$(echo "$PERMHR" | /usr/bin/sed -e 's/\(.\)/\1 /g' -e s/"-"//g -e s/"T"// -e s/"x "/execute\ / -e s/"t "/execute\ / -e s/"w "/write\ modify\ / -e s/"r "/read\ / | xargs)
+else
+	PERMHR=$(echo "$PERMHR" | /usr/bin/sed -e 's/\(.\)/\1 /g' -e s/"-"//g -e s/"T"// -e s/"x "/execute\ enter\ / -e s/"t "/execute\ enter\ / -e s/"w "/write\ modify\ / -e s/"r "/read\ list\ / | xargs)
+fi
+echo -e "Permissions ($ID_INFO):\t$PERMHR"
+
+# additional permissions
+
+ADDIDINFO="$USERID"
+ADDPERM="-"
+if [[ "$USERID" == "$PUIDNO" ]] ; then
+	DIRPERM=${DIRPERM:1:3}
+	if [[ "$DIRPERM" == ?"w"? ]] ; then
+		ADDPERM="rename delete"
+		ADDIDINFO="$USERID"
+	fi
+elif [[ $(echo "$USERGROUPSN" | /usr/bin/grep "$PGIDNO") != "" ]] ; then
+	DIRPERM=${DIRPERM:4:3}
+	if [[ "$DIRPERM" == ?"w"? ]] ; then
+		ADDIDINFO="$PGIDNO"
+		ADDPERM="rename delete"
+	fi
+else
+	DIRPERM=${DIRPERM:7:3}
+	if [[ "$DIRPERM" == ?"w"? ]] ; then
+		ADDIDINFO="12"
+		ADDPERM="rename delete"
+	fi
+fi
+
 # sticky bit
 STICKY="-"
-[[ $(echo "$LISTING" | /usr/bin/awk '{print $1}') == *"t" ]] && STICKY="set"
-echo -e "Sticky Bit:\t$STICKY"
+STLIST=$(echo "$LISTING" | /usr/bin/awk '{print $1}')
+if [[ "$STLIST" == *"t" ]] || [[ "$STLIST" == *"t"? ]] ; then
+	STICKY="set with execution bit"
+	STICKYBIT="t"
+elif [[ "$STLIST" == *"T" ]] || [[ "$STLIST" == *"T"? ]] ; then
+	STICKY="set without execution bit"
+	STICKYBIT="T"
+fi
+echo -e "Sticky Bit:\t$STICKY [no effect on macOS]"
 
 # SUID/GUID
 SUIDSET="-" ; GUIDSET="-"
@@ -275,16 +330,48 @@ SUIDSET="-" ; GUIDSET="-"
 echo -e "Set GID:\t$GUIDSET"
 echo -e "Set UID:\t$SUIDSET"
 
+# system/user flags
 FLAGSA=$(echo "$STATS" | /usr/bin/awk '{print $15}' | /usr/bin/awk -F= '{print $2}')
 FLAGSB=$(echo "$STAT" | /usr/bin/awk -F"\"" '{print $9}' | /usr/bin/awk '{print $3}')
 USERFLAGS="$FLAGSB ($FLAGSA)"
 echo -e "System/User Flags:\t$USERFLAGS"
 
+# file attributes
 CHFLAGS=$(echo "$LISTING" | /usr/bin/awk '{print $5}' | /usr/bin/awk '{gsub(","," ");print}')
 ROOTFLAGS=$(echo "$CHFLAGS" | /usr/bin/awk '{for(w=1;w<=NF;w++) print $w}' | /usr/bin/sort | /usr/bin/uniq -c | /usr/bin/sort -nr | /usr/bin/awk '{print $2}' | xargs)
 echo -e "Attributes:\t$ROOTFLAGS"
 
-# ACL/ACE
+# check for SIP
+MACOS=$(/usr/bin/sw_vers)
+MACOSV=$(echo "$MACOS" | /usr/bin/awk -F: '/ProductVersion/{print $2}' | xargs)
+OSMAJ=$(echo "$MACOSV" | /usr/bin/awk -F. '{print $1}')
+OSMIN=$(echo "$MACOSV" | /usr/bin/awk -F. '{print $2}')
+if [[ ${OSMAJ} -eq 10 ]] && [[ ${OSMIN} -lt 11 ]] ; then
+	SIPSTATUS="not available"
+fi
+if [[ ${OSMAJ} -eq 10 ]] && [[ ${OSMIN} -ge 11 ]]; then
+	SIPSTATUS=$(/usr/bin/csrutil status | awk -F": " '{print $2}' | /usr/bin/sed 's/\.$//')
+fi
+
+# check attributes for permission restrictions
+if [[ "$ACCOUNT" != "root" ]] ; then
+	if [[ $(echo "$ROOTFLAGS" | /usr/bin/grep -w 'sunlnk') != "" ]] ; then
+		if [[ "$UFILEACCESS" == "" ]] && [[ "$GDIRACCESS" == "" ]] ; then
+			ADDPERM="-"
+			ADDIDINFO="$USERID"
+		fi
+	elif [[ $(echo "$ROOTFLAGS" | /usr/bin/grep -w 'restricted') != "" ]] ; then
+		ADDPERM="-"
+		ADDIDINFO="$USERID"
+	fi
+else
+	if [[ $(echo "$ROOTFLAGS" | /usr/bin/grep -w 'restricted') != "" ]] && [[ "$SIPSTATUS" == "enabled" ]] ; then
+		ADDPERM="-"
+		ADDIDINFO="$USERID"
+	fi
+fi
+
+# ACL
 ACE_LIST=$(ls -dlAe "$FILEPATH" | /usr/bin/tail -n +2)
 
 ACL=""
@@ -296,9 +383,10 @@ $ACE")
 done < <(echo "$ACE_LIST")
 
 ACL=$(echo "$ACL" | /usr/bin/tail -n +2)
+
 if [[ "$ACL" == "" ]] ; then
 	echo -e "ACE:\t-"
-else
+else # parse ACL for ACE
 	ACE_COUNT="0"
 	while read -r ACE
 	do
@@ -307,11 +395,52 @@ else
 	done < <(echo "$ACL")
 fi
 
-# root sizes
+# parse ACL for further permission restrictions
+if [[ "$ACCOUNT" != "root" ]] ; then
+	USERACL=$(echo "$ACL" | /usr/bin/grep "$ACCOUNT")
+	if [[ "$USERACL" != "" ]] ; then
+		[[ $(echo "$USERACL" | /usr/bin/grep "$ACCOUNT deny delete") != "" ]] && ADDPERM="-"
+	fi
+	GROUPACL=$(echo "$ACL" | /usr/bin/grep "group:")
+	if [[ "$GROUPACL" != "" ]] ; then
+		while read -r GROUPACE
+		do
+			ACEGROUP=$(echo "$GROUPACE" | /usr/bin/awk '{print $1}' | /usr/bin/awk -F: '{print $2}')
+			if [[ $(echo "$USERGROUPS" | /usr/bin/grep -w "$ACEGROUP") != "" ]] ; then
+				[[ $(echo "$GROUPACE" | /usr/bin/grep "deny delete") != "" ]] && ADDPERM="-"
+			fi
+		done < <(echo "$GROUPACL")
+	fi
+fi
+
+# check final schg attribute (can only be changed/deleted by root in single-user mode)
+if [[ $(echo "$ROOTFLAGS" | /usr/bin/grep -w 'schg') != "" ]] ; then
+	ADDPERM="-"
+fi
+
+echo -e "Other Permissions ($ADDIDINFO):\t$ADDPERM"
+
+# extended attributes
+XTRALIST=$(ls -dlAO@ "$FILEPATH" | /usr/bin/tail -n +2)
+XATTRLIST=$(echo "$XTRALIST" | /usr/bin/grep -v "com.apple.ResourceFork")
+if [[ "$XATTRLIST" != "" ]] ; then
+	echo ""
+	echo -e "\t${STANDOUT}Extended Attributes     ${RESET}"
+	XATTRCOUNT="0"
+	while read -r XATTR
+	do
+		(( XATTRCOUNT++ ))
+		XATTRN=$(echo "$XATTR" | /usr/bin/awk '{print $1}' | xargs)
+		echo -e "Xattr $XATTRCOUNT:\t$XATTRN"
+	done < <(echo "$XATTRLIST")
+fi
+
+# root object information
+
 if [[ "$FTYPEX" == "Directory" ]] ; then
 
 	echo ""
-	echo -e "\t${STANDOUT}Root Object Sizes        ${RESET}"
+	echo -e "\t${STANDOUT}Root Object Information ${RESET}"
 
 	STATSIZE_B=$(echo "$STAT" | /usr/bin/awk '{print $8}')
 	STATSIZE_MB=$(humandecimal "$STATSIZE_B")
@@ -321,9 +450,10 @@ if [[ "$FTYPEX" == "Directory" ]] ; then
 	else
 		STATSIZE="$STATSIZE_B B ($STATSIZE_MB, $STATSIZE_MIB)"
 	fi
-	echo -e "Directory Data Size:\t$STATSIZE"
+	echo -e "Data Size [stat]:\t$STATSIZE"
 
-	XTRASIZE=$(ls -dlAO@ "$FILEPATH" | /usr/bin/tail -n +2 | /usr/bin/awk '{total += $2} END {printf "%.0f", total}')
+
+	XTRASIZE=$(echo "$XTRALIST" | /usr/bin/awk '{total += $2} END {printf "%.0f", total}')
 	[[ "$XTRASIZE" == "" ]] && XTRASIZE="0"
 	if [[ "$XTRASIZE" != "0" ]] ; then
 		XTRASIZE_MB=$(humandecimal "$XTRASIZE")
@@ -336,7 +466,7 @@ if [[ "$FTYPEX" == "Directory" ]] ; then
 	else
 		XTRASIZE_INFO="0 B"
 	fi
-	echo -e "Directory Xattr:\t$XTRASIZE_INFO"
+	echo -e "Extended Attributes [stat]:\t$XTRASIZE_INFO"
 
 	ROOT_TOTAL=$(echo "$STATSIZE_B + $XTRASIZE" | /usr/bin/bc -l)
 	ROOT_TOTAL_MB=$(humandecimal "$ROOT_TOTAL")
@@ -346,12 +476,14 @@ if [[ "$FTYPEX" == "Directory" ]] ; then
 	else
 		ROOT_TSIZE="$ROOT_TOTAL B ($ROOT_TOTAL_MB, $ROOT_TOTAL_MIB)"
 	fi
-	echo -e "Directory Size On Volume:\t$ROOT_TSIZE"
+	echo -e "Size On Volume:\t$ROOT_TSIZE"
 
 fi
 
+# content sizes
+
 echo ""
-echo -e "\t${STANDOUT}Content Sizes            ${RESET}"
+echo -e "\t${STANDOUT}Sizes & Disk Usage      ${RESET}"
 
 # total list
 TOTAL_LIST=$(ls -ReAlOs@ "$FILEPATH" | /usr/bin/sed '/^$/d')
@@ -553,7 +685,7 @@ fi
 echo -e "Data Size On Volume:\t$TOTAL_SIZE_INFO"
 
 echo ""
-echo -e "\t${STANDOUT}Unix Dates               ${RESET}"
+echo -e "\t${STANDOUT}Unix Dates              ${RESET}"
 
 # dates
 BIRTHTIME=$(echo "$STAT" | /usr/bin/awk -F"\"" '{print $8}')
@@ -569,7 +701,7 @@ LASTACCESS=$(echo "$STAT" | /usr/bin/awk -F"\"" '{print $2}')
 echo -e "Accessed:\t$LASTACCESS"
 
 echo ""
-echo -e "\t${STANDOUT}macOS Dates              ${RESET}"
+echo -e "\t${STANDOUT}macOS Dates             ${RESET}"
 
 ADD_DATE=$(echo "$MDLS" | /usr/bin/awk -F"= " '/kMDItemDateAdded/{print $2}')
 if [[ "$ADD_DATE" == "" ]] || [[ "$ADD_DATE" == "(null)" ]] ; then
@@ -603,8 +735,10 @@ else
 fi
 echo -e "Last Used:\t$LASTUSED"
 
+# macOS file information
+
 echo ""
-echo -e "\t${STANDOUT}macOS General Information${RESET}"
+echo -e "\t${STANDOUT}macOS File Information  ${RESET}"
 
 # Shared folder
 SHARE_INFO=$(/usr/bin/dscl . -read SharePoints/"$BASENAME" 2>&1)
@@ -698,7 +832,7 @@ if [[ "$EXEC_INFO" == "true" ]] ; then
 	fi
 fi
 
-### method to read the default "open with" application for a file?
+### method to determine the default "open with" application for a file?
 
 # content type
 CONTENT_TYPE=$(echo "$MDLS" | /usr/bin/awk -F"= " '/kMDItemContentType/{print $2}' | /usr/bin/head -n 1 | /usr/bin/sed 's/^"\(.*\)"$/\1/')
@@ -788,14 +922,21 @@ if [[ "$FCOMMENT" == "(null)" ]] || [[ "$FCOMMENT" == "" ]] ; then
 fi
 echo -e "Finder Comment:\t$FCOMMENT"
 
-# Download URL
+# item copyright
+ITEMCOPYRIGHT=$(echo "$MDLS" | /usr/bin/awk -F"\"" '/kMDItemCopyright/{print $2}')
+if [[ "$ITEMCOPYRIGHT" == "(null)" ]] || [[ "$ITEMCOPYRIGHT" == "" ]] ; then
+	ITEMCOPYRIGHT="-"
+fi
+echo -e "Item Copyright:\t$ITEMCOPYRIGHT"
+
+# download URL
 DL_SOURCE=$(echo "$MDLS" | /usr/bin/awk -F"\"" '/kMDItemWhereFroms/{getline;print $2}')
 if [[ "$DL_SOURCE" == "" ]] || [[ "$DL_SOURCE" == "(null)" ]] ; then
 	DL_SOURCE="-"
 fi
 echo -e "Download URL:\t$DL_SOURCE"
 
-# App Store Category
+# App Store category
 if [[ "$TTYPE" == "package" ]] ; then
 	MASCAT=$(echo "$MDLS" | /usr/bin/grep -w "kMDItemAppStoreCategory" | /usr/bin/awk -F"= " '{print $2}' | /usr/bin/sed 's/^"\(.*\)"$/\1/')
 	if [[ "$MASCAT" == "" ]] || [[ "$MASCAT" == "(null)" ]] ; then
@@ -820,7 +961,7 @@ fi
 echo -e "Use Count:\t$USECOUNT"
 
 echo ""
-echo -e "\t${STANDOUT}macOS Security           ${RESET}"
+echo -e "\t${STANDOUT}macOS Security          ${RESET}"
 
 # macOS security & App Store info
 ASSESS=$(/usr/sbin/spctl -v --assess "$FILEPATH" 2>&1)
@@ -955,7 +1096,7 @@ echo -e "Quarantine:\t$QUARANTINE"
 if [[ "$TTYPE" == "package" ]] && [[ "$PLIST_INFO" == "true" ]] ; then
 
 	echo ""
-	echo -e "\t${STANDOUT}macOS Bundle Information ${RESET}"
+	echo -e "\t${STANDOUT}macOS Bundle Information${RESET}"
 
 	BUNDLE_NAME=$(echo "$JPLIST" | /usr/bin/awk -F"\"" '/CFBundleName/{print $4}')
 	[[ "$BUNDLE_NAME" == "" ]] && BUNDLE_NAME="-"
@@ -1056,7 +1197,7 @@ fi
 if [[ "$FTYPEX" == "Directory" ]] ; then
 
 	echo ""
-	echo -e "\t${STANDOUT}File Contents            ${RESET}"
+	echo -e "\t${STANDOUT}File Contents           ${RESET}"
 
 	FULL_LIST=$(echo "$TOTAL_LIST" | /usr/bin/sed '/^'"$SEDPATH"'/d' | /usr/bin/awk 'NF>=11 {print substr($0, index($0,$2))}' | /usr/bin/sed -e '/\ \.$/d' -e '/\ \.\.$/d' -e '/^.\//d')
 	if [[ "$FULL_LIST" != "" ]] ; then
@@ -1125,42 +1266,136 @@ if [[ "$FTYPEX" == "Directory" ]] ; then
 				GDESUBCOUNT=$(( $GDESUBCOUNT + $GDESUB_ADD ))
 			done < <(echo "$DIRLIST")
 			CLOAKCOUNT=$(( $GDESUBCOUNT - $GDESUBTRACT - $FILECOUNT - $DIRCOUNT + $RDIRCOUNT + $RCLOAKED ))
-			[[ "$CLOAKCOUNT" -gt 0 ]] && echo -e "cloaked:\t$CLOAKCOUNT"
+			[[ "$CLOAKCOUNT" == "0" ]] && CLOAKCOUNT="-"
+			echo -e "cloaked:\t$CLOAKCOUNT"
 		fi
 
-		### files with ACL >>> needs the -e option for FULL LIST ; awk less than 11, no SEDPATH, no total etc.
-		### echo -e "ACE Total:\t$ACE_TOTAL"
+		ACESALL=$(echo "$TOTAL_LIST" | /usr/bin/awk 'NF<=2' | /usr/bin/sed '/^'"$SEDPATH"'/d' | /usr/bin/sed '/^total /d' | /usr/bin/grep -v "com.apple.ResourceFork")
+		ACESTOTAL=$(echo "$ACESALL" | /usr/bin/wc -l | xargs)
+		echo -e "ACE Total:\t$ACESTOTAL"
 
 	else
 		echo -e "Contains:\t0 items"
 	fi
+
 fi
+
+# user information
+
+echo ""
+echo -e "\t${STANDOUT}User Information        ${RESET}"
+
+XUID=$(/usr/bin/id -u)
+XUGROUP=$(/usr/bin/id -gn)
+XUGROUPID=$(/usr/bin/id -g)
+echo -e "Effective User & Group:\t$EXECUSER:$XUGROUP ($XUID:$XUGROUPID)"
+
+echo -e "Real User & Group:\t$ACCOUNT:$UGROUP ($USERID:$UGROUPID)"
+
+GROUP_COUNT="0"
+for USERGROUP in ${USERGROUPS}
+do
+	(( GROUP_COUNT++ ))
+	USERGROUPN=$(echo "$USERGROUPSN" | /usr/bin/awk '{print $'"$GROUP_COUNT"'}')
+	echo -e "Group $GROUP_COUNT:\t$USERGROUP ($USERGROUPN)"
+done
+
+# volume info
+
+echo ""
+echo -e "\t${STANDOUT}Volume Information      ${RESET}"
+
+echo -e "File System:\t$FSYSTEM"
+
+MPOINT=$(echo "$FPDF" | /usr/bin/awk '{ for(i=9; i<=NF; i++) printf "%s",$i (i==NF?ORS:OFS) }')
+echo -e "Mount Point:\t$MPOINT"
+
+MPLIST=$(ls -dl "$MPOINT")
+FSOWNER=$(echo "$MPLIST" | /usr/bin/awk '{print $3}')
+[[ "$FSOWNER" == "" ]] && FSOWNER="-"
+FSGROUP=$(echo "$MPLIST" | /usr/bin/awk '{print $4}')
+[[ "$FSGROUP" == "" ]] && FSGROUP="-"
+FSOWNERN=$(/usr/bin/id -u "$FSOWNER")
+[[ "$FSOWNERN" == "" ]] && FSOWNERN="-"
+FSGROUPN=$(/usr/bin/id -g "$FSOWNER")
+[[ "$FSGROUPN" == "" ]] && FSGROUPN="-"
+echo -e "File System Owner:\t$FSOWNER:$FSGROUP ($FSOWNERN:$FSGROUPN)"
+
+FSTYPE=$(echo "$DISKUTIL" | /usr/bin/awk -F":" '/Type \(Bundle\)/{print $2}' | xargs)
+[[ "$FSTYPE" == "" ]] && FSTYPE="-"
+echo -e "File System Type:\t$FSTYPE"
+
+IUSED=$(echo "$FPDF" | /usr/bin/awk '{print $6}')
+IFREE=$(echo "$FPDF" | /usr/bin/awk '{print $7}')
+ITOTAL=$(( $IUSED + $IFREE ))
+ITOTAL=$(echo "$ITOTAL" | /usr/bin/awk '{printf("%'"'"'d\n",$1);}')
+IFREE=$(echo "$IFREE" | /usr/bin/awk '{printf("%'"'"'d\n",$1);}')
+IUSED=$(echo "$IUSED" | /usr/bin/awk '{printf("%'"'"'d\n",$1);}')
+IPERC=$(echo "$FPDF" | /usr/bin/awk '{print $8}')
+echo -e "Available Inodes:\t$ITOTAL"
+echo -e "Free Inodes:\t$IFREE"
+echo -e "Used Inodes:\t$IUSED ($IPERC)"
+
+echo -e "Device Block Size:\t$CLUSTERSIZE B"
+
+BLOCKSIZE=$(echo "$STATS" | /usr/bin/awk '{print $13}' | /usr/bin/awk -F= '{print $2}')
+echo -e "Allocation Block Size:\t$BLOCKSIZE B"
+
+BUSED=$(echo "$FPDF" | /usr/bin/awk '{print $3}')
+BUSED=$(echo "$BUSED" | /usr/bin/awk '{printf("%'"'"'d\n",$1);}')
+BFREE=$(echo "$FPDF" | /usr/bin/awk '{print $4}')
+BFREE=$(echo "$BFREE" | /usr/bin/awk '{printf("%'"'"'d\n",$1);}')
+BTOTAL=$(echo "$FPDF" | /usr/bin/awk '{print $2}')
+BTOTAL=$(echo "$BTOTAL" | /usr/bin/awk '{printf("%'"'"'d\n",$1);}')
+BPERC=$(echo "$FPDF" | /usr/bin/awk '{print $5}')
+echo -e "Available Blocks:\t$BTOTAL"
+echo -e "Free Blocks:\t$BFREE"
+echo -e "Used Blocks:\t$BUSED ($BPERC)"
+
+FSPERSONA=$(echo "$DISKUTIL" | /usr/bin/awk -F":" '/File System Personality/{print $2}' | xargs)
+[[ "$FSPERSONA" == "" ]] && FSPERSONA="-"
+echo -e "File System Personality:\t$FSPERSONA"
+
+JOURNAL=$(echo "$DISKUTIL" | /usr/bin/awk -F":" '/Journal:/{print $2}' | xargs)
+[[ "$JOURNAL" == "" ]] && JOURNAL="-"
+echo -e "Journal:\t$JOURNAL"
+
+VOL_NAME=$(echo "$DISKUTIL" | /usr/bin/awk -F":" '/Volume Name/{print $2}' | xargs)
+[[ "$VOL_NAME" == "" ]] && VOL_NAME="-"
+echo -e "Volume Name:\t$VOL_NAME"
+
+# check if Spotlight is enabled
+MDUTIL=$(/usr/bin/mdutil -s "$MPOINT" 2>&1 | /usr/bin/tail -n 1)
+if [[ $(echo "$MDUTIL" | /usr/bin/grep "Indexing enabled.") != "" ]] ; then
+	SL_STATUS="enabled"
+else
+	SL_STATUS="disabled"
+fi
+echo -e "Spotlight:\t$SL_STATUS"
+
+# macOS information
+
+echo ""
+echo -e "\t${STANDOUT}macOS Information       ${RESET}"
+
+MACOSP=$(echo "$MACOS" | /usr/bin/awk -F: '/ProductName/{print $2}' | xargs)
+echo -e "Product Name:\t$MACOSP"
+
+echo -e "Product Version:\t$MACOSV"
+
+MACOSB=$(echo "$MACOS" | /usr/bin/awk -F: '/BuildVersion/{print $2}' | xargs)
+echo -e "Build Version:\t$MACOSB"
+
+echo -e "System Integrity Protection:\t$SIPSTATUS"
+
+SYSCTL=$(/usr/sbin/sysctl -n kern.ostype kern.osrelease kern.osrevision kern.uuid | xargs)
+
+KERNEL=$(echo "$SYSCTL" | /usr/bin/awk '{print $1,$2 " (" $3 ")"}')
+echo -e "Kernel:\t$KERNEL"
+
+UUID=$(echo "$SYSCTL" | /usr/bin/awk '{print $4}')
+echo -e "UUID:\t$UUID"
 
 done
 
 exit
-
-# ACL/ACE
-ACE_LIST=$(ls -dlAe "$FILEPATH" | /usr/bin/tail -n +2)
-
-ACL=""
-while read -r ACE
-do
-	ACE=$(echo "$ACE" | /usr/bin/awk -F": " '{print substr($0, index($0,$2))}')
-	ACL=$(echo "$ACL
-$ACE")
-done < <(echo "$ACE_LIST")
-
-ACL=$(echo "$ACL" | /usr/bin/tail -n +2)
-if [[ "$ACL" == "" ]] ; then
-	echo -e "ACE:\tnone"
-else
-	ACE_COUNT="0"
-	while read -r ACE
-	do
-		echo -e "ACE $ACE_COUNT:\t$ACE"
-		((ACE_COUNT++))
-	done < <(echo "$ACL")
-fi
-
-echo ""
