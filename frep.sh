@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# frep v0.9.10 beta
+# frep v0.9.11 beta
 # macOS File Reporter
 
 SCRNAME=$(/usr/bin/basename $0)
@@ -17,6 +17,13 @@ if [ $# -lt 1 ] ; then
     echo "Usage: [sudo] $SCRNAME <PATH>"
     exit
 fi
+
+### LATER
+### add arguments -b and --bitbar for sending paths to BitBar plugin
+### method to determine the default "open with" application for a file?
+### WebDAV checks/support
+### SSHFS checks/support
+### AFP checks/support?  (might not be necessary: will be dropped with APFS)
 
 STANDOUT=$(tput smso)
 BOLD=$(tput bold)
@@ -112,17 +119,13 @@ STAT=$(/usr/bin/stat "$FILEPATH")
 STATS=$(/usr/bin/stat -s "$FILEPATH")
 
 # some volume info first
-### CHECK ON SMB MOUNTS
 FPDF=$(/bin/df -Pi "$FILEPATH" | /usr/bin/tail -1)
 FSYSTEM=$(echo "$FPDF" | /usr/bin/awk '{print $1}')
 DISKUTIL=$(/usr/sbin/diskutil info "$FSYSTEM" 2>&1)
 [[ "$DISKUTIL" == "Could not find disk:"* ]] && DISKUTIL=""
-CLUSTERSIZE=$(echo "$DISKUTIL" | /usr/bin/awk '/Device Block Size/{print $4}')
-if [[ "$CLUSTERSIZE" == "" ]] ; then
-	CLUSTERSIZE="0"
-	SOD_ADD=" [approximate]"
-else
-	SOD_ADD=""
+SECTORSIZE=$(echo "$DISKUTIL" | /usr/bin/awk '/Device Block Size/{print $4}')
+if [[ "$SECTORSIZE" == "" ]] ; then
+	SECTORSIZE="0"
 fi
 
 echo ""
@@ -360,7 +363,7 @@ if [[ ${OSMAJ} -eq 10 ]] && [[ ${OSMIN} -ge 11 ]]; then
 	SIPSTATUS=$(/usr/bin/csrutil status | awk -F": " '{print $2}' | /usr/bin/sed 's/\.$//')
 fi
 
-# check attributes for permission restrictions
+# check attributes for permissions restrictions
 if [[ "$ACCOUNT" != "root" ]] ; then
 	if [[ $(echo "$ROOTFLAGS" | /usr/bin/grep -w 'sunlnk') != "" ]] ; then
 		if [[ "$UFILEACCESS" == "" ]] && [[ "$GDIRACCESS" == "" ]] ; then
@@ -402,7 +405,7 @@ else # parse ACL for ACE
 	done < <(echo "$ACL")
 fi
 
-# parse ACL for further permission restrictions
+# parse ACL for further permissions restrictions
 if [[ "$ACCOUNT" != "root" ]] ; then
 	USERACL=$(echo "$ACL" | /usr/bin/grep "$ACCOUNT")
 	if [[ "$USERACL" != "" ]] ; then
@@ -500,12 +503,21 @@ TOTAL_LIST=$(ls -ReAlOs@ "$FILEPATH" | /usr/bin/sed '/^$/d')
 SEDPATH=$(echo "$FILEPATH" | /usr/bin/awk '{gsub("/","\\/");print}')
 SIZE_LIST=$(echo "$TOTAL_LIST" | /usr/bin/sed '/^'"$SEDPATH"'/d' | /usr/bin/awk 'NF>=11 {print substr($0, index($0,$2))}')
 
+# blocks on disk
+BLOCKLIST=$(echo "$TOTAL_LIST" | /usr/bin/sed '/^'"$SEDPATH"'/d' | /usr/bin/awk 'NF>=11' | /usr/bin/awk '{print $2,$1}')
+BLOCKSONDISK=$(echo "$BLOCKLIST" | /usr/bin/grep -v '^d' | /usr/bin/awk '{total += $2} END {printf "%.0f", total}')
+echo -e "Device Blocks:\t$BLOCKSONDISK"
+
+# disk usage calculation with du
+DISK_USAGE=$(/usr/bin/du -k -d 0 "$FILEPATH" | /usr/bin/head -n 1 | /usr/bin/awk '{print $1}')
+DU_SIZE=$(echo "$DISK_USAGE * 1024" | /usr/bin/bc -l)
+[[ "$DU_SIZE" == "" ]] && DU_SIZE="0"
+
 # size on disk calculated from ls/stat output
-if [[ "$CLUSTERSIZE" != "0" ]] ; then
-	BLOCKLIST=$(echo "$TOTAL_LIST" | /usr/bin/sed '/^'"$SEDPATH"'/d' | /usr/bin/awk 'NF>=11' | /usr/bin/awk '{print $2,$1}')
-	BLOCKSONDISK=$(echo "$BLOCKLIST" | /usr/bin/grep -v '^d' | /usr/bin/awk '{total += $2} END {printf "%.0f", total}')
-	echo -e "Device Blocks:\t$BLOCKSONDISK"
-	SIZEONDISK=$(echo "$BLOCKSONDISK * $CLUSTERSIZE" | /usr/bin/bc -l)
+if [[ "$SECTORSIZE" != "0" ]] ; then
+
+	SOD_ADD=""
+	SIZEONDISK=$(echo "$BLOCKSONDISK * $SECTORSIZE" | /usr/bin/bc -l)
 	[[ "$SIZEONDISK" == "" ]] && SIZEONDISK="0"
 	SOD_MB=$(humandecimal "$SIZEONDISK")
 	SOD_MIB=$(humanbinary "$SIZEONDISK")
@@ -515,21 +527,65 @@ if [[ "$CLUSTERSIZE" != "0" ]] ; then
 	else
 		SOD_INFO="$SOD_T B ($SOD_MB, $SOD_MIB)"
 	fi
-	echo -e "Size On Disk [stat]:\t$SOD_INFO"
+
 else
-	echo -e "Size On Disk [stat]:\t- [unknown device block size]"
+	if [[ "$DU_SIZE" != "0" ]] ; then
+
+		SECTORSIZE_RAW=$(echo "$DU_SIZE / $BLOCKSONDISK" | /usr/bin/bc)
+
+		if [[ "$SECTORSIZE_RAW" -le 511 ]] ; then
+			SECTORSIZEC=512
+		elif [[ "$SECTORSIZE_RAW" -ge 4097 ]] ; then
+			SECTORSIZEC=4096
+		else
+			DIV512=$(round $(echo "512 / $SECTORSIZE_RAW" | /usr/bin/bc -l) 17)
+			DIV1024=$(round $(echo "1024 / $SECTORSIZE_RAW" | /usr/bin/bc -l) 17)
+			DIV2048=$(round $(echo "2048 / $SECTORSIZE_RAW" | /usr/bin/bc -l) 17)
+			DIV4096=$(round $(echo "4096 / $SECTORSIZE_RAW" | /usr/bin/bc -l) 17)
+			SUBTR512=$(echo "1 - $DIV512" | /usr/bin/bc -l)
+			SUBTR1024=$(echo "1 - $DIV1024" | /usr/bin/bc -l)
+			SUBTR2048=$(echo "1 - $DIV2048" | /usr/bin/bc -l)
+			SUBTR4096=$(echo "1 - $DIV4096" | /usr/bin/bc -l)
+			[[ "$SUBTR512" == "-."* ]] && SUBTR512=$(echo "1+ $SUBTR512" | /usr/bin/bc -l)
+			[[ "$SUBTR1024" == "-."* ]] && SUBTR1024=$(echo "0 - $SUBTR1024" | /usr/bin/bc -l)
+			[[ "$SUBTR2048" == "-."* ]] && SUBTR2048=$(echo "0 - $SUBTR2048" | /usr/bin/bc -l)
+			[[ "$SUBTR4096" == "-."* ]] && SUBTR4096=$(echo "0 - $SUBTR4096" | /usr/bin/bc -l)
+			ALLNUMS="$SUBTR512 512
+$SUBTR1024 1024
+$SUBTR2048 2048
+$SUBTR4096 4096"
+			MINVALUE=$(echo "$ALLNUMS" | /usr/bin/sed '/^-/d' | /usr/bin/awk '{if(min==""){min=$1}; if($1<min) {min=$1}} END {print min}')
+			SECTORSIZEC=$(echo "$ALLNUMS" | /usr/bin/grep -w "$MINVALUE" | /usr/bin/awk '{print $2}')
+		fi
+
+		SOD_ADD=" [estimated]"
+		SIZEONDISK=$(echo "$BLOCKSONDISK * $SECTORSIZEC" | /usr/bin/bc -l)
+		[[ "$SIZEONDISK" == "" ]] && SIZEONDISK="0"
+		SOD_MB=$(humandecimal "$SIZEONDISK")
+		SOD_MIB=$(humanbinary "$SIZEONDISK")
+		SOD_T=$(echo "$SIZEONDISK" | /usr/bin/awk '{printf("%'"'"'d\n",$1);}')
+		if [[ "$SOD_MB" == "" ]] && [[ "$SOD_MIB" == "" ]] ; then
+			SOD_INFO="$SOD_T B"
+		else
+			SOD_INFO="$SOD_T B ($SOD_MB, $SOD_MIB)"
+		fi
+
+	else
+		SOD_INFO="-"
+		SOD_ADD=" [unknown device block size]"
+		SECTORSIZEC="-"
+	fi
 fi
 
+echo -e "Size On Disk [stat]:\t$SOD_INFO$SOD_ADD"
+
 # disk usage reported by HFS+ to du
-DISK_USAGE=$(/usr/bin/du -k -d 0 "$FILEPATH" | /usr/bin/head -n 1 | /usr/bin/awk '{print $1}')
-DU_SIZE=$(echo "$DISK_USAGE * 1024" | /usr/bin/bc -l)
 DU_SIZE_MB=$(humandecimal "$DU_SIZE")
 DU_SIZE_MIB=$(humanbinary "$DU_SIZE")
 DU_SIZE_T=$(echo "$DU_SIZE" | /usr/bin/awk '{printf("%'"'"'d\n",$1);}')
 if [[ "$DU_SIZE" != "$SIZEONDISK" ]] ; then
-	if [[ "$CLUSTERSIZE" == "0" ]] ; then
-		SIZEONDISK="$DU_SIZE"
-		echo -e "Disk Usage [du]:\t$DU_SIZE_T B ($DU_SIZE_MB, $DU_SIZE_MIB)$SOD_ADD"
+	if [[ "$SECTORSIZE" == "0" ]] ; then
+		echo -e "Disk Usage [du]:\t$DU_SIZE_T B ($DU_SIZE_MB, $DU_SIZE_MIB) [approximate]"
 	else
 		echo -e "Disk Usage [du]:\t$DU_SIZE_T B [probable HFS+ error]"
 	fi
@@ -850,8 +906,6 @@ if [[ "$EXEC_INFO" == "true" ]] ; then
 		echo -e "Architecture:\t$LIPO_INFO"
 	fi
 fi
-
-### method to determine the default "open with" application for a file?
 
 # content type
 CONTENT_TYPE=$(echo "$MDLS" | /usr/bin/awk -F"= " '/kMDItemContentType/{print $2}' | /usr/bin/head -n 1 | /usr/bin/sed 's/^"\(.*\)"$/\1/')
@@ -1278,7 +1332,6 @@ if [[ "$FTYPEX" == "Directory" ]] ; then
 			RDIRCOUNT=$(echo "$ROOTLIST" | /usr/bin/grep "^d" | /usr/bin/wc -l | xargs)
 			DIRLIST=$(echo "$TOTAL_LIST" | /usr/bin/grep "$FILEPATH" | /usr/bin/sed 's/.$//')
 			GDESUBTRACT=$(( $DIRCOUNT * 9 ))
-			### GDESUBTRACT=$(echo "$DIRCOUNT * 9" | /usr/bin/bc -l)
 
 			GDESUBCOUNT="0"
 			while read -r SUBFOLDER
@@ -1359,10 +1412,10 @@ echo -e "Available Inodes:\t$ITOTAL"
 echo -e "Free Inodes:\t$IFREE"
 echo -e "Used Inodes:\t$IUSED ($IPERC)"
 
-if [[ "$CLUSTERSIZE" != "0" ]] ; then
-	echo -e "Device Block Size:\t$CLUSTERSIZE B"
+if [[ "$SECTORSIZE" != "0" ]] ; then
+	echo -e "Device Block Size:\t$SECTORSIZE B"
 else
-	echo -e "Device Block Size:\t-"
+	echo -e "Device Block Size:\t$SECTORSIZEC B$SOD_ADD"
 fi
 
 BLOCKSIZE=$(echo "$STATS" | /usr/bin/awk '{print $13}' | /usr/bin/awk -F= '{print $2}')
