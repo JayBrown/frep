@@ -1,7 +1,25 @@
 #!/bin/bash
 
-# frep v0.9.11 beta
+# frep v0.9.12 beta
 # macOS File Reporter
+
+# tested with
+# local volumes: internal; external attached; local cloud folder: iCloud Drive, Dropbox etc.
+# SMB (smbfs): /Volumes or other mount points; mounted via Finder or with smbutil
+# WebDAV (davfs): /Volumes or other mount points; mounted via Finder or with mount_webdav
+# ExpanDrive (exfs etc.): Amazon Cloud Drive, box.com, Dropbox, GoogleDrive, hubiC, OneDrive, ownCloud, FTP/SFTP, WebDAV
+# Transmit (tdfuse, TransmitFS): local mount of FTP/SFTP volumes
+
+### NOT YET TESTED
+# SSHFS mounts (FUSE for macOS)
+# NFS mounts
+# VNC mounts ???
+# AFP mounts (could be irrelevant under APFS)
+
+### LATER
+### add arguments -b and --bitbar for sending paths to BitBar plugin
+
+export LANG=en_US.UTF-8
 
 SCRNAME=$(/usr/bin/basename $0)
 
@@ -18,18 +36,10 @@ if [ $# -lt 1 ] ; then
     exit
 fi
 
-### LATER
-### add arguments -b and --bitbar for sending paths to BitBar plugin
-### method to determine the default "open with" application for a file?
-### WebDAV checks/support
-### SSHFS checks/support
-### AFP checks/support?  (might not be necessary: will be dropped with APFS)
-
 STANDOUT=$(tput smso)
 BOLD=$(tput bold)
 RESET=$(tput sgr0)
 
-export LANG=en_US.UTF-8
 LOGNAME=$(who am i | /usr/bin/awk '{print $1}')
 EXECUSER=$(/usr/bin/id -un)
 
@@ -120,6 +130,13 @@ STATS=$(/usr/bin/stat -s "$FILEPATH")
 
 # some volume info first
 FPDF=$(/bin/df -Pi "$FILEPATH" | /usr/bin/tail -1)
+if [[ "$FPDF" == *" ["*"] "* ]] ; then
+	GSUB1="%20["
+	FPDF=$(echo "$FPDF" | /usr/bin/awk '{gsub(/ \[/,"'"$GSUB1"'");print}')
+elif [[ "$FPDF" == *" ("*") "* ]] ; then
+	GSUB2="%20("
+	FPDF=$(echo "$FPDF" | /usr/bin/awk '{gsub(/ \(/,"'"$GSUB2"'");print}')
+fi
 FSYSTEM=$(echo "$FPDF" | /usr/bin/awk '{print $1}')
 DISKUTIL=$(/usr/sbin/diskutil info "$FSYSTEM" 2>&1)
 [[ "$DISKUTIL" == "Could not find disk:"* ]] && DISKUTIL=""
@@ -600,6 +617,7 @@ fi
 
 # MDLS
 MDLS=$(/usr/bin/mdls "$FILEPATH" 2>/dev/null)
+[[ "$MDLS" == *": could not find "* ]] && MDLS=""
 
 # physical size as reported by macOS (mdls) -- might be larger than actual disk usage (virtual size ignoring HFS+ compression)
 PHYSICAL_SIZE=$(echo "$MDLS" | /usr/bin/awk -F"= " '/kMDItemPhysicalSize/{print $2}')
@@ -990,7 +1008,7 @@ echo -e "OpenMeta Tags:\t$TAGS"
 
 # Finder comment
 FCOMMENT=$(/usr/bin/mdls -raw -name kMDItemFinderComment "$FILEPATH" 2>&1)
-if [[ "$FCOMMENT" == "(null)" ]] || [[ "$FCOMMENT" == "" ]] ; then
+if [[ "$FCOMMENT" == "(null)" ]] || [[ "$FCOMMENT" == "" ]] || [[ "$FCOMMENT" == *": could not find "* ]] ; then
 	FCOMMENT="-"
 fi
 echo -e "Finder Comment:\t$FCOMMENT"
@@ -1163,6 +1181,7 @@ echo -e "Gatekeeper:\t$GATEKEEPER"
 # Quarantine
 QUARANTINE=$(/usr/bin/xattr -p com.apple.quarantine "$FILEPATH" 2>&1)
 [[ $(echo "$QUARANTINE" | /usr/bin/grep "No such xattr: com.apple.quarantine") != "" ]] && QUARANTINE="false"
+[[ $(echo "$QUARANTINE" | /usr/bin/grep "xattr\: \[Errno") != "" ]] && QUARANTINE="-"
 echo -e "Quarantine:\t$QUARANTINE"
 
 # read info from bundle's Info.plist
@@ -1441,18 +1460,39 @@ JOURNAL=$(echo "$DISKUTIL" | /usr/bin/awk -F":" '/Journal:/{print $2}' | xargs)
 echo -e "Journal:\t$JOURNAL"
 
 VOL_NAME=$(echo "$DISKUTIL" | /usr/bin/awk -F":" '/Volume Name/{print $2}' | xargs)
-[[ "$VOL_NAME" == "" ]] && VOL_NAME="-"
-echo -e "Volume Name:\t$VOL_NAME"
+if [[ "$VOL_NAME" != "" ]] ; then
+	echo -e "Volume Name:\t$VOL_NAME"
+	MOUNT_RAW=$(/sbin/mount | /usr/bin/grep -w "$FSYSTEM" | /usr/bin/awk -F"(" '{print $2}' | /usr/bin/sed 's/)$//')
+	MOUNT_INFO=$(echo "$MOUNT_RAW" | /usr/bin/awk -F", " '{print substr($0, index($0,$1))}')
+	echo -e "Mount Information:\t$MOUNT_INFO"
+else
+	echo -e "Volume Name:\t-"
+	MOUNT_INFO=$(/sbin/mount | /usr/bin/grep -w "$MPOINT")
+	CONNECTION=$(echo "$MOUNT_INFO" | /usr/bin/awk -F"(" '{print $2}' | /usr/bin/sed 's/)$//')
+	CONN_TYPE=$(echo "$CONNECTION" | /usr/bin/awk -F", " '{print $1}')
+	CONN_INFO=$(echo "$CONNECTION" | /usr/bin/awk -F", " '{print substr($0, index($0,$2))}')
+	echo -e "Connection Type:\t$CONN_TYPE"
+	echo -e "Connection Info:\t$CONN_INFO"
 
-if [[ "$VOL_NAME" == "-" ]] ; then
-	SMB=$(/usr/bin/smbutil statshares -m "$MPOINT" 2>/dev/null)
-	if [[ "$SMB" != "" ]] ; then
-		SMBSERVER=$(echo "$SMB" | /usr/bin/awk '/SERVER_NAME/{print substr($0, index($0,$2))}')
-		echo -e "SMB Server:\t$SMBSERVER"
-		SMBSERVER=$(echo "$SMBSERVER" | /usr/bin/awk '{gsub(" ","%20");print}')
-		EXTVOLNAME=$(echo "$FSYSTEM" | /usr/bin/awk -F"$SMBSERVER/" '{print $2}')
-		echo -e "Server Volume Name:\t$EXTVOLNAME"
+	if [[ "$FSYSTEM" == "exfs"* ]] || [[ "$FSYSTEM" == "ExpanDrive"* ]] ; then
+		EXPANDRIVE=$(echo "$MPOINT" | /usr/bin/awk -F"/Volumes/" '{print substr($0, index($0,$2))}')
+		echo -e "ExpanDrive Volume Name:\t$EXPANDRIVE"
+	elif [[ "$FSYSTEM" == "TransmitFS"* ]] ; then
+		TRANSMITFS=$(echo "$MPOINT" | /usr/bin/awk -F"/Volumes/" '{print substr($0, index($0,$2))}')
+		echo -e "TransmitFS Volume Name:\t$TRANSMITFS"
+	else
+		if [[ "$CONN_TYPE" == "smbfs" ]] ; then
+			SMB=$(/usr/bin/smbutil statshares -m "$MPOINT" 2>/dev/null)
+			if [[ "$SMB" != "" ]] ; then
+				SMBSERVER=$(echo "$SMB" | /usr/bin/awk '/SERVER_NAME/{print substr($0, index($0,$2))}')
+				echo -e "SMB Server:\t$SMBSERVER"
+				SMBSERVER=$(echo "$SMBSERVER" | /usr/bin/awk '{gsub(" ","%20");print}')
+				EXTVOLNAME=$(echo "$FSYSTEM" | /usr/bin/awk -F"$SMBSERVER/" '{print $2}')
+				echo -e "Server Volume Name:\t$EXTVOLNAME"
+			fi
+		fi
 	fi
+
 fi
 
 # check if Spotlight is enabled
