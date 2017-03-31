@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# frep v0.9.12 beta
+# frep v0.9.13 beta
 # macOS File Reporter
 
 # tested with
@@ -1173,8 +1173,13 @@ else
 	if [[ "$SEC_STATUS" == "" ]] ; then
 		SEC_STATUS=$(echo "$ASSESS" | /usr/bin/grep "$BASENAME" | rev | /usr/bin/awk '{print $1}' | rev)
 	fi
+	if [[ "$SEC_STATUS" == "" ]] ; then
+		SEC_STATUS=$(echo "$ASSESS" | /usr/bin/grep ":" | /usr/bin/awk -F": " '{print $2}')
+	fi
 fi
+[[ "$SEC_STATUS" == "" ]] && SEC_STATUS="-"
 echo -e "Security:\t$SEC_STATUS"
+
 GATEKEEPER=$(echo "$ASSESS" | /usr/bin/awk -F"=" '/override=/{print $2}')
 echo -e "Gatekeeper:\t$GATEKEEPER"
 
